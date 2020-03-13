@@ -20,7 +20,7 @@
   ----------
   GUI: Locally hosted home assistant
   MQTT: Locally hosted broker https://mosquitto.org/
-  OTA updates
+  OTA updates - not supported by the ATmega
   ----------
   The circuit:
   Controllino Maxi - ATmega 2560-16AU with W5100 ethetnet
@@ -52,11 +52,7 @@
 
 // Note: Libaries are inluced in "Project Dependencies" file platformio.ini
 #include <private.h>               // Passwords etc not for github
-// #include <ESP8266WiFi.h>           // ESP8266 core for Arduino https://github.com/esp8266/Arduino
 #include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-// #include <ESP8266mDNS.h>           // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
-// #include <WiFiUdp.h>               // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
-// #include <ArduinoOTA.h>            // Needed for Over-the-Air ESP8266 programming https://github.com/esp8266/Arduino
 #include <ArduinoJson.h>           // For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
 #include <I2CSoilMoistureSensor.h> // I2C Soil Moisture Sensor https://github.com/Apollon77/I2CSoilMoistureSensor
 #include <Wire.h>
@@ -148,8 +144,8 @@ Normally called only once from setup.
 Also called if the MQTT connection failes after 5 re-tries.
 */
 bool setup_ethernet() {
-  Serial.println("Inside setup_ethernet() function");
-  Serial.println("Initialize Ethernet with DHCP:");
+  // Serial.println("Inside setup_ethernet() function");
+  // Serial.println("Initialize Ethernet with DHCP:");
   if (Ethernet.begin(mac) == 0) {
     Serial.println("Failed to configure Ethernet using DHCP");
     // Check for Ethernet hardware present
@@ -163,47 +159,25 @@ bool setup_ethernet() {
     Serial.print("  DHCP assigned IP ");
     Serial.println(Ethernet.localIP());
     digitalWrite(DIGITAL_PIN_LED_POWER_STATUS, HIGH); // Lights on HIGH.
-
     return true;
   }
+  return false; // Catch all
 }
 
+void checkEthernetConnection() {
+  Serial.println("Inside checkEthernetConnection() function");
+  switch(Ethernet.maintain()) {
+   case 0:   Serial.println("DHCP: Nothing happened"); break;
+   case 1:   Serial.println("DHCP: Renew failed"); break;
+   case 2:   Serial.println("DHCP: Renew success"); break;
+   case 3:   Serial.println("DHCP: Rebind fail"); break;
+   case 4:   Serial.println("DHCP: Rebind success"); break;
+   default:  Serial.println("DHCP: Unexpected number"); break;
+  }
+  // print your local IP address:
+  // Serial.println("Current IP address: " + Ethernet.localIP());
+}
 
-
-// Setup Over-the-Air programming, called from the setup.
-// https://www.penninkhof.com/2015/12/1610-over-the-air-esp8266-programming-using-platformio/
-// void setup_OTA() {
-//   // Port defaults to 8266
-//   // ArduinoOTA.setPort(8266);
-//   // Hostname defaults to esp8266-[ChipID]
-//   // ArduinoOTA.setHostname("myesp8266");
-//   // No authentication by default
-//   // ArduinoOTA.setPassword("admin");
-//   ArduinoOTA.onStart([]() {
-//     String type;
-//     if (ArduinoOTA.getCommand() == U_FLASH)
-//       type = "sketch";
-//     else // U_SPIFFS
-//       type = "filesystem";
-//     // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-//     Serial.println("Start updating " + type);
-//   });
-//   ArduinoOTA.onEnd([]() {
-//     Serial.println("\nEnd");
-//   });
-//   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-//     Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-//   });
-//   ArduinoOTA.onError([](ota_error_t error) {
-//     Serial.printf("Error[%u]: ", error);
-//     if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-//     else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-//     else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-//     else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-//     else if (error == OTA_END_ERROR) Serial.println("End Failed");
-//   });
-//   ArduinoOTA.begin();
-// }
 
 // Publish this nodes state via MQTT
 void publishNodeHealth() {
@@ -214,7 +188,7 @@ void publishNodeHealth() {
   
   // Gather data
   char bufIP[16]; // IP address
-  char bufMAC[6]; // MAC address
+  // char bufMAC[6]; // MAC address
 
   sprintf(bufIP, "%d.%d.%d.%d", Ethernet.localIP()[0], Ethernet.localIP()[1], Ethernet.localIP()[2], Ethernet.localIP()[3]);
   // sprintf(bufMAC, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);  //This line calses a delayed crash, %x expects an unsigned int, whereas this supplying a char
@@ -237,8 +211,6 @@ void publishNodeHealth() {
 
   Serial.println("Completed publishNodeHealth() function");
 }
-
-
 
 // Subscribe to MQTT topics
 void mqttSubscribe() {
@@ -266,6 +238,7 @@ boolean mqttReconnect() {
   } else {
     Serial.println("Failed MQTT connection, rc=" + String(publishNodeStatusJsonTopic) + "] ");
   }
+  Serial.println("Completed mqttReconnect() function");
   return mqttClient.connected(); // Return connection state
 }
 
@@ -351,8 +324,12 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis >= publishInterval || ignorePublishInterval == true) {
     previousMillis = currentMillis; // Save the last time this ran
+    Serial.println("##############################################");
     Serial.println("Inside mqttPublishStatusData() function");
-    digitalWrite(CONTROLLINO_D3, HIGH); 
+    digitalWrite(CONTROLLINO_D3, HIGH); // Light LED whilst in this fuction
+    // Check ethernet connection
+    checkEthernetConnection();
+        
     // Check connection to MQTT server
     if (mqttClient.connected()) {
 
@@ -367,12 +344,8 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
       // INFO: the data must be converted into a string; a problem occurs when using floats...
       doc["Valve1"] = String(outputOnePoweredStatus);
       doc["Valve2"] = String(outputTwoPoweredStatus);
-      doc["SoilCapacitance"] = String(soilSensorCapacitance);
-      doc["SoilTemperature"] = String(soilSensorTemperature);
-
-      // doc["ClientName"] = String(clientName);
-      // doc["IP"] = String(bufIP);
-      // doc["MAC"] = String(bufMAC);
+      // doc["SoilCapacitance"] = String(soilSensorCapacitance);
+      // doc["SoilTemperature"] = String(soilSensorTemperature);
       serializeJsonPretty(doc, Serial);
       Serial.println(""); // Add new line as serializeJson() leaves the line open.
       char buffer[json_buffer_size];
@@ -383,7 +356,7 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
       else
         Serial.println("JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
     Serial.println("Complete mqttPublishStatusData() function");
-    digitalWrite(CONTROLLINO_D3, LOW); 
+    digitalWrite(CONTROLLINO_D3, LOW); // Turn off LED
     }
   }
 }
@@ -570,20 +543,6 @@ void customLoop() {
   checkState2();
 }
 
-void checkEthernetConnection() {
-  Serial.println("Inside checkConnection() function");
-  delay(200);
-  switch(Ethernet.maintain()) {
-   case 0:   Serial.println("DHCP: Nothing happened"); break;
-   case 1:   Serial.println("DHCP: Renew failed"); break;
-   case 2:   Serial.println("DHCP: Renew success"); break;
-   case 3:   Serial.println("DHCP: Rebind fail"); break;
-   case 4:   Serial.println("DHCP: Rebind success"); break;
-   default:  Serial.println("DHCP: Unexpected number"); break;
-  }
-  // print your local IP address:
-  Serial.println("Current IP address: " + Ethernet.localIP());
-}
 
 // void(* resetFunc) (void) = 0;//declare reset function at address 0
 
@@ -613,11 +572,9 @@ void setup() {
   delay(250);
   // Setup ethernet
   setup_ethernet();
+
   digitalWrite(CONTROLLINO_D7, HIGH); 
   delay(250);
-
-  // // Setup OTA updates.
-  // setup_OTA();
 
   // Set MQTT settings
   mqttClient.setServer(mqtt_server, 1883);
@@ -638,16 +595,14 @@ void setup() {
 
 // Main working loop
 void loop() {
-  // delay(250);
+   delay(1000);
   // Serial.println("In Main loop");
 
-  // Check for Over The Air updates
-  // ArduinoOTA.handle();
   // Call on the background functions to allow them to do their thing. Only does something on the ESP..
 
   checkMqttConnection();
 
-  // checkEthernetConnection();
+  
 
   // Publish MQTT
   mqttPublishStatusData(false); // Normal publish cycle
