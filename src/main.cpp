@@ -61,6 +61,9 @@
 #include <SPI.h>
 #include <Ethernet.h>
 
+// #include <avr/wdt.h>
+// #define Reset_AVR() wdt_enable(WDTO_1S); while(1) {}
+
 // Ethernet parameters
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 const int noWifiConnectionCountLimit = 5;
@@ -96,8 +99,8 @@ unsigned long previousMillis = 0;
 const long publishInterval = 6000; // Publish frequency in milliseconds 60000 = 1 min
 
 // LED output parameters
-const int DIGITAL_PIN_LED_MQTT_CONNECTED = CONTROLLINO_D6;
-const int DIGITAL_PIN_LED_POWER_STATUS = CONTROLLINO_D7;
+const int DIGITAL_PIN_LED_MQTT_CONNECTED = CONTROLLINO_D1;
+const int DIGITAL_PIN_LED_POWER_STATUS = CONTROLLINO_D0;
 
 // Define state machine states
 typedef enum {
@@ -121,7 +124,7 @@ typedef enum {
   outputTwo = 1,
 } irrigationOutputs;
 
-// Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of internet connection break)
+// Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of network/server connection break)
 float watchdogDurationTimeSetMillis = 3600000; //60 mins = 3600000 millis
 float watchdogTimeStarted;
 
@@ -544,8 +547,6 @@ void customLoop() {
 }
 
 
-// void(* resetFunc) (void) = 0;//declare reset function at address 0
-
 void setup() {
   // Set serial speed
   Serial.begin(115200);
@@ -567,49 +568,62 @@ void setup() {
   // Initialize pin start values
   digitalWrite(DIGITAL_PIN_LED_POWER_STATUS, LOW); 
   digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW); 
+  
+  // Set startup debug LED #1
   digitalWrite(CONTROLLINO_D6, HIGH); 
-
   delay(250);
+  
   // Setup ethernet
   setup_ethernet();
 
+// Set startup debug LED #2
   digitalWrite(CONTROLLINO_D7, HIGH); 
   delay(250);
 
   // Set MQTT settings
   mqttClient.setServer(mqtt_server, 1883);
   mqttClient.setCallback(mqttcallback);
-  delay(250);
-  
+
   checkMqttConnection();
+
+  // Set startup debug LED #3
   digitalWrite(CONTROLLINO_D8, HIGH); 
   delay(250);
 
   // Setup for this project.
   customSetup();
 
+// Set startup debug LED #4
   digitalWrite(CONTROLLINO_D9, HIGH); 
+  delay(250);
+
+  // //clear all flags
+  // MCUSR = 0;
+  
+  // /* Write logical one to WDCE and WDE */
+  // /* Keep old prescaler setting to prevent unintentional time-out */
+  // WDTCSR |= _BV(WDCE) | _BV(WDE);
+  // WDTCSR = 0;
 
   Serial.println("Setup Complete");
 }
 
 // Main working loop
 void loop() {
-   delay(1000);
-  // Serial.println("In Main loop");
-
-  // Call on the background functions to allow them to do their thing. Only does something on the ESP..
-
+  // Check connection to the MQTT server
   checkMqttConnection();
-
-  
 
   // Publish MQTT
   mqttPublishStatusData(false); // Normal publish cycle
-  // Deal with millis rollover, hack by resetting the esp every 48 days
-  // if (millis() > 4147200000)
-    // ESP.restart();
 
   // Loop for this project.
-  customLoop();
+    customLoop();
+
+  // // Deal with millis rollover, hack by resetting the esp every 48 days
+  // // if (millis() > 4147200000)
+  // if (millis() > 30000)
+  //   Serial.println("Restarting Arduino");
+  //   delay(500);
+  //   Reset_AVR();
+
 }
