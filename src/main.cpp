@@ -7,7 +7,7 @@
     MQTT command message with 'off' payload command one of the outputs off.
   Note: My code is based on my other ESP8266 based projects, so there are may be some ESP nameing used.
   ----------
-  Github: https://github.com/Genestealer/
+  Github: https://github.com/genestealer/Controllino-Irrigation
   ----------
   Key Libraries:
    ArduinoJson.h           https://bblanchon.github.io/ArduinoJson/ BUT ONLY UP TO VERSION 5!
