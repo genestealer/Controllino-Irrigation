@@ -10,37 +10,29 @@
   Github: https://github.com/Genestealer/
   ----------
   Key Libraries:
-  ESP8266WiFi.h           https://github.com/esp8266/Arduino
-  ESP8266mDNS.h           https://github.com/esp8266/Arduino/tree/master/libraries/ESP8266mDNS
-  WiFiUdp.h               https://github.com/esp8266/Arduino
-  ArduinoOTA.h            https://github.com/esp8266/Arduino
-  ArduinoJson.h           https://bblanchon.github.io/ArduinoJson/ BUT ONLY UP TO VERSION 5!
-  I2CSoilMoistureSensor.h https://github.com/Apollon77/I2CSoilMoistureSensor
-  Updated arduinojson to Version 6
+   ArduinoJson.h           https://bblanchon.github.io/ArduinoJson/ BUT ONLY UP TO VERSION 5!
+   Updated arduinojson to Version 6
   ----------
   GUI: Locally hosted home assistant
   MQTT: Locally hosted broker https://mosquitto.org/
   OTA updates - not supported by the ATmega
   ----------
   The circuit:
-  Controllino Maxi - ATmega 2560-16AU with W5100 ethetnet
+    Controllino Maxi - ATmega 2560-16AU with W5100 ethetnet
     https://www.controllino.biz/wp-content/uploads/2018/10/CONTROLLINO-MAXI-Pinout.pdf
   Inputs:
-    I2CSoilMoistureSensor https://www.tindie.com/products/miceuz/i2c-soil-moisture-sensor/
-      SCK/SCL   (NodeMCU pin D1)
-      SDA/MOSI  (NodeMCU pin D2)
+    Analog Capacitive Soil Moisture Sensor V1.2 https://www.aliexpress.com/item/32832538686
+    W5100 ethetnet (Built-In)
   Outputs:
     Relay one output - GPIO pin 28 (CONTROLLINO Relay 6)
     Relay two output - GPIO pin 29 (CONTROLLINO Relay 7)
-    LED_MQTT_CONNECTED - GPIO pin 3  (CONTROLLINO pin Digital 1)
-    LED_POWER_STATUS - GPIO pin 2  (CONTROLLINO pin Digital 0)
+    Multiple on-board LEDS
     ----------
   Notes:
-    NodeMCU lED lights to show MQTT connection.
-    ESP lED lights to show WIFI connection.
+    Multiple on-board LEDS toshow MQTT connection, ethernet connection, status, etc
     ----------
    Edits made to the PlatformIO Project Configuration File:
-     platform = espressif8266_stage = https://github.com/esp8266/Arduino/issues/2833 as the standard has an outdated Arduino Core for the ESP8266, ref http://docs.platformio.org/en/latest/platforms/espressif8266.html#over-the-air-ota-update
+     platform = atmelavr = https://github.com/esp8266/Arduino/issues/2833 as the standard has an outdated Arduino Core for the ESP8266, ref http://docs.platformio.org/en/latest/platforms/espressif8266.html#over-the-air-ota-update
      build_flags = -DMQTT_MAX_PACKET_SIZE=512 = Overide max JSON size, until libary is updated to inclde this option https://github.com/knolleary/pubsubclient/issues/110#issuecomment-174953049
    ----------
    Sources:
@@ -54,15 +46,10 @@
 #include <private.h>               // Passwords etc not for github
 #include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
 #include <ArduinoJson.h>           // For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
-#include <I2CSoilMoistureSensor.h> // I2C Soil Moisture Sensor https://github.com/Apollon77/I2CSoilMoistureSensor
-#include <Wire.h>
 #include <Arduino.h>
 #include <Controllino.h>
 #include <SPI.h>
 #include <Ethernet.h>
-
-// #include <avr/wdt.h>
-// #define Reset_AVR() wdt_enable(WDTO_1S); while(1) {}
 
 // Ethernet parameters
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
@@ -86,7 +73,6 @@ const char* willMessage = "offline"; // MQTT Last Will and Testament Message
 const int json_buffer_size = 256;
 int noMqttConnectionCount = 0;
 const int noMqttConnectionCountLimit = 5;
-
 // MQTT Subscribe
 const char* subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
 const char* subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
@@ -99,8 +85,21 @@ unsigned long previousMillis = 0;
 const long publishInterval = 6000; // Publish frequency in milliseconds 60000 = 1 min
 
 // LED output parameters
-const int DIGITAL_PIN_LED_MQTT_CONNECTED = CONTROLLINO_D1;
 const int DIGITAL_PIN_LED_POWER_STATUS = CONTROLLINO_D0;
+const int DIGITAL_PIN_LED_NETWORK_CONNECTED = CONTROLLINO_D1;
+const int DIGITAL_PIN_LED_MQTT_CONNECTED = CONTROLLINO_D2;
+const int DIGITAL_PIN_LED_MQTT_FLASH = CONTROLLINO_D3;
+
+// Relay output pins
+const int DIGITAL_PIN_RELAY_ONE = CONTROLLINO_R1; // Define relay output one
+const int DIGITAL_PIN_RELAY_TWO = CONTROLLINO_R2; // Define relay output two
+
+// Output powered status
+bool outputOnePoweredStatus = false;
+bool outputTwoPoweredStatus = false;
+
+// Sensor Inputs
+const int ANALOGUE_PIN_ONE = CONTROLLINO_A0; // Define analogue input one
 
 // Define state machine states
 typedef enum {
@@ -128,18 +127,6 @@ typedef enum {
 float watchdogDurationTimeSetMillis = 3600000; //60 mins = 3600000 millis
 float watchdogTimeStarted;
 
-// Relay output pins
-const int DIGITAL_PIN_RELAY_ONE = CONTROLLINO_R1; // Define relay output one
-const int DIGITAL_PIN_RELAY_TWO = CONTROLLINO_R2; // Define relay output two
-
-// Output powered status
-bool outputOnePoweredStatus = false;
-bool outputTwoPoweredStatus = false;
-
-// Create instance of I2CSoilMoistureSensor
-I2CSoilMoistureSensor soilSensor;
-float soilSensorCapacitance = 0;
-float soilSensorTemperature = 0;
 
 /*
 Setup the ethernet connection. 
@@ -161,7 +148,7 @@ bool setup_ethernet() {
   } else {
     Serial.print("  DHCP assigned IP ");
     Serial.println(Ethernet.localIP());
-    digitalWrite(DIGITAL_PIN_LED_POWER_STATUS, HIGH); // Lights on HIGH.
+    digitalWrite(DIGITAL_PIN_LED_NETWORK_CONNECTED, HIGH); // Lights on HIGH.
     return true;
   }
   return false; // Catch all
@@ -177,6 +164,7 @@ void checkEthernetConnection() {
    case 4:   Serial.println("DHCP: Rebind success"); break;
    default:  Serial.println("DHCP: Unexpected number"); break;
   }
+  // The 2 lines below calse a crash for some reason.
   // print your local IP address:
   // Serial.println("Current IP address: " + Ethernet.localIP());
 }
@@ -185,14 +173,12 @@ void checkEthernetConnection() {
 // Publish this nodes state via MQTT
 void publishNodeHealth() {
   Serial.println("Inside publishNodeHealth() function");
-
   // Update status to online, retained = true - last will Message will drop in if we go offline
   mqttClient.publish(publishLastWillTopic, "online", true);
-  
+
   // Gather data
   char bufIP[16]; // IP address
   // char bufMAC[6]; // MAC address
-
   sprintf(bufIP, "%d.%d.%d.%d", Ethernet.localIP()[0], Ethernet.localIP()[1], Ethernet.localIP()[2], Ethernet.localIP()[3]);
   // sprintf(bufMAC, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);  //This line calses a delayed crash, %x expects an unsigned int, whereas this supplying a char
 
@@ -274,15 +260,15 @@ void checkMqttConnection() {
         noMqttConnectionCount = ++noMqttConnectionCount; //Increment the counter
         Serial.println("MQTT connection attempt number: " + String(noMqttConnectionCount));
         if (noMqttConnectionCount > noMqttConnectionCountLimit) {
-          // Max MQTT connection attempts reached, reconnect wifi.
+          // Max MQTT connection attempts reached, reconnect ethernet.
           noMqttConnectionCount = 0; // Reset MQTT connection attempt counter.
-          Serial.println("MQTT connection count limit reached, reconnecting wifi");
+          Serial.println("MQTT connection count limit reached, reconnecting ethernet");
           // Try to reconnect wifi, if this fails after x attemps then reboot.
           if (!setup_ethernet()) {
             noEthernetConnectionCountRebootCount = ++noEthernetConnectionCountRebootCount;
             Serial.println("Wifi connection attempt number: " + String(noEthernetConnectionCountRebootCount));
             if (noEthernetConnectionCountRebootCount > noEthernetConnectionCountRebootLimit) {
-              Serial.println("Wifi re-connection count limit reached, reboot esp");
+              Serial.println("Wifi re-connection count limit reached, reboot arduino");
               // Reboot
               // ESP.restart();
               // resetFunc(); //call reset 
@@ -299,23 +285,12 @@ void checkMqttConnection() {
   }
 }
 
-// Read I2C soil sensor and save values ready for next publish to server.
-// Return true if values read, else false if not.
-void readSoilSensor() {
-  //Check soilSensor
-  if (!soilSensor.isBusy()) { // Only progress if the sensor is not busy
+// Read soil sensor and return its value.
+int readSoilSensor() {
     // Read Soil Sensor Capacitance
-    soilSensorCapacitance = soilSensor.getCapacitance(); //read capacitance register
-    Serial.println("Soil Moisture Capacitance: " + String(soilSensorCapacitance));
-
-    // // Read Soil Sensor Temperature
-    // soilSensorTemperature = soilSensor.getTemperature() / (float)10; // The returned value is in degrees Celsius with factor 10, so need to divide by 10 to get real value
-    // Serial.println("Soil Temperature: "+ String(soilSensorTemperature));
-
-    // Serial.print(", Light: "); // omitted as it has a 3 second delay, alt: call startMeasureLight then read 3 seconds later.
-    // Serial.println(sensor.getLight(true)); //request light measurement, wait and read light register
-
-  }
+    int sensorValue = analogRead(ANALOGUE_PIN_ONE);
+    Serial.println("Soil Moisture Capacitance: " + String(sensorValue));
+    return sensorValue;
 }
 
 /*
@@ -329,7 +304,7 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
     previousMillis = currentMillis; // Save the last time this ran
     Serial.println("##############################################");
     Serial.println("Inside mqttPublishStatusData() function");
-    digitalWrite(CONTROLLINO_D3, HIGH); // Light LED whilst in this fuction
+    digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, HIGH); // Light LED whilst in this fuction
     // Check ethernet connection
     checkEthernetConnection();
         
@@ -339,15 +314,12 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
       // Publish node state data
       publishNodeHealth();
 
-      // // Read Soil sensor
-      // readSoilSensor();
-
       // Prepare and send the data in JSON to MQTT
       StaticJsonDocument<json_buffer_size> doc;
       // INFO: the data must be converted into a string; a problem occurs when using floats...
       doc["Valve1"] = String(outputOnePoweredStatus);
       doc["Valve2"] = String(outputTwoPoweredStatus);
-      // doc["SoilCapacitance"] = String(soilSensorCapacitance);
+      doc["SoilCapacitance"] = String(readSoilSensor());
       // doc["SoilTemperature"] = String(soilSensorTemperature);
       serializeJsonPretty(doc, Serial);
       Serial.println(""); // Add new line as serializeJson() leaves the line open.
@@ -359,7 +331,7 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
       else
         Serial.println("JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
     Serial.println("Complete mqttPublishStatusData() function");
-    digitalWrite(CONTROLLINO_D3, LOW); // Turn off LED
+    digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW); // Turn off LED
     }
   }
 }
@@ -525,18 +497,11 @@ void customSetup() {
   // Initialize pins
   pinMode(DIGITAL_PIN_RELAY_ONE, OUTPUT);
   pinMode(DIGITAL_PIN_RELAY_TWO, OUTPUT);
+  pinMode(ANALOGUE_PIN_ONE, INPUT);
+
   // Initialize pin start values
   digitalWrite(DIGITAL_PIN_RELAY_ONE, LOW);
   digitalWrite(DIGITAL_PIN_RELAY_TWO, LOW);
-
-//   // Set I2C for soil sensor
-//   Wire.begin();
-//   Wire.setClockStretchLimit(5000); // Ensure I2C timing works on ESP8266 https://github.com/Apollon77/I2CSoilMoistureSensor/issues/8
-//   soilSensor.begin(true, true); // Reset soil sensor, assumes we give it at least 1 second before talking to it.
-
-//   // Talk to soil sensor
-//   Serial.print(F("I2C Soil Moisture Sensor Address: ")), Serial.println(soilSensor.getAddress(), HEX);
-//   Serial.print(F("Sensor Firmware version: ")), Serial.println(soilSensor.getVersion(), HEX);
 }
 
 // Custom loop for this program.
@@ -556,8 +521,8 @@ void setup() {
   // Initialize pins
   pinMode(DIGITAL_PIN_LED_POWER_STATUS, OUTPUT);
   pinMode(DIGITAL_PIN_LED_MQTT_CONNECTED, OUTPUT);
-  pinMode(CONTROLLINO_D2, OUTPUT);
-  pinMode(CONTROLLINO_D3, OUTPUT);
+  pinMode(DIGITAL_PIN_LED_NETWORK_CONNECTED, OUTPUT);
+  pinMode(DIGITAL_PIN_LED_MQTT_FLASH, OUTPUT);
   pinMode(CONTROLLINO_D6, OUTPUT);
   pinMode(CONTROLLINO_D7, OUTPUT);
   pinMode(CONTROLLINO_D8, OUTPUT);
@@ -566,9 +531,12 @@ void setup() {
 
   
   // Initialize pin start values
-  digitalWrite(DIGITAL_PIN_LED_POWER_STATUS, LOW); 
+  digitalWrite(DIGITAL_PIN_LED_POWER_STATUS, HIGH); 
   digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW); 
-  
+  digitalWrite(DIGITAL_PIN_LED_NETWORK_CONNECTED, LOW); 
+  digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW); 
+
+
   // Set startup debug LED #1
   digitalWrite(CONTROLLINO_D6, HIGH); 
   delay(250);
@@ -593,18 +561,6 @@ void setup() {
   // Setup for this project.
   customSetup();
 
-// Set startup debug LED #4
-  digitalWrite(CONTROLLINO_D9, HIGH); 
-  delay(250);
-
-  // //clear all flags
-  // MCUSR = 0;
-  
-  // /* Write logical one to WDCE and WDE */
-  // /* Keep old prescaler setting to prevent unintentional time-out */
-  // WDTCSR |= _BV(WDCE) | _BV(WDE);
-  // WDTCSR = 0;
-
   Serial.println("Setup Complete");
 }
 
@@ -617,13 +573,5 @@ void loop() {
   mqttPublishStatusData(false); // Normal publish cycle
 
   // Loop for this project.
-    customLoop();
-
-  // // Deal with millis rollover, hack by resetting the esp every 48 days
-  // // if (millis() > 4147200000)
-  // if (millis() > 30000)
-  //   Serial.println("Restarting Arduino");
-  //   delay(500);
-  //   Reset_AVR();
-
+  customLoop();
 }

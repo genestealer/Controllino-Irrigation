@@ -8,7 +8,6 @@
             "includePath": [
                 "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/include",
                 "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/src",
-                "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/ArduinoOTA_ID6178/src",
                 "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/CONTROLLINO_ID397",
                 "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/I2CSoilMoistureSensor_ID294",
                 "C:/Users/richa/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
@@ -18,6 +17,7 @@
                 "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/PubSubClient_ID89/src",
                 "C:/Users/richa/.platformio/packages/framework-arduino-avr/cores/arduino",
                 "C:/Users/richa/.platformio/packages/framework-arduino-avr/variants/Controllino_maxi",
+                "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/ArduinoOTA_ID6178/src",
                 "C:/Users/richa/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
                 "C:/Users/richa/.platformio/packages/framework-arduino-avr/libraries/HID/src",
                 "C:/Users/richa/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
@@ -29,7 +29,6 @@
                 "path": [
                     "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/include",
                     "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/src",
-                    "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/ArduinoOTA_ID6178/src",
                     "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/CONTROLLINO_ID397",
                     "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/I2CSoilMoistureSensor_ID294",
                     "C:/Users/richa/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
@@ -39,6 +38,7 @@
                     "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/PubSubClient_ID89/src",
                     "C:/Users/richa/.platformio/packages/framework-arduino-avr/cores/arduino",
                     "C:/Users/richa/.platformio/packages/framework-arduino-avr/variants/Controllino_maxi",
+                    "d:/Google Drive/Projects/IoT/GIT_Irrigation_Controllino/Controllino-Irrigation/.pio/libdeps/controllino_maxi/ArduinoOTA_ID6178/src",
                     "C:/Users/richa/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
                     "C:/Users/richa/.platformio/packages/framework-arduino-avr/libraries/HID/src",
                     "C:/Users/richa/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
