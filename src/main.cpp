@@ -10,19 +10,20 @@
   Github: https://github.com/genestealer/Controllino-Irrigation
   ----------
   Key Libraries:
-   ArduinoJson.h           https://bblanchon.github.io/ArduinoJson/ BUT ONLY UP TO VERSION 5!
+   ArduinoJson.h           https://bblanchon.github.io/ArduinoJson/
    Updated arduinojson to Version 6
   ----------
-  GUI: Locally hosted home assistant
-  MQTT: Locally hosted broker https://mosquitto.org/
-  OTA updates - not supported by the ATmega
+  GUI: Locally hosted home assistant on network https://www.home-assistant.io/
+  MQTT: Locally hosted broker on network https://mosquitto.org/
+  OTA updates - not supported by default by the ATmega without flashing with custom bootloader and 
   ----------
   The circuit:
-    Controllino Maxi - ATmega 2560-16AU with W5100 ethetnet
+    Controllino Maxi - ATmega 2560-16AU with W5100 ethernet
     https://www.controllino.biz/wp-content/uploads/2018/10/CONTROLLINO-MAXI-Pinout.pdf
+    CONTROLLINO customized bootloaders https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library/tree/master/Bootloaders/MAXI
   Inputs:
     Analog Capacitive Soil Moisture Sensor V1.2 https://www.aliexpress.com/item/32832538686
-    W5100 ethetnet (Built-In)
+    W5100 ethernet (Built-In)
   Outputs:
     Relay one output - GPIO pin 28 (CONTROLLINO Relay 6)
     Relay two output - GPIO pin 29 (CONTROLLINO Relay 7)
@@ -46,13 +47,13 @@
 #include <private.h>               // Passwords etc not for github
 #include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
 #include <ArduinoJson.h>           // For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
-#include <Arduino.h>
-#include <Controllino.h>
-#include <SPI.h>
-#include <Ethernet.h>
+#include <Arduino.h>               // Core Arduino libary https://github.com/arduino/Arduino
+#include <Controllino.h>           // Core Arduino Controllino libary https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
+#include <SPI.h>                   // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
+#include <Ethernet.h>              // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
 
 // Ethernet parameters
-byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+byte mac[] = { 0xDE, 0xAD, 0xAD, 0xEF, 0xFE, 0xED };
 const int noWifiConnectionCountLimit = 5;
 int noEthernetConnectionCountRebootCount = 0;
 const int noEthernetConnectionCountRebootLimit = 5;
@@ -70,7 +71,8 @@ const char* mqtt_username = secret_mqtt_username; // MQTT Username
 const char* mqtt_password = secret_mqtt_password; // MQTT Password
 bool willRetain = true; // MQTT Last Will and Testament
 const char* willMessage = "offline"; // MQTT Last Will and Testament Message
-const int json_buffer_size = 256;
+#define json_buffer_size	(256) // Correct buffer overflow, ref https://github.com/knolleary/pubsubclient/commit/98ad16eff8848bffeb812c4d347dfdb5ddef5a31
+// const int json_buffer_size = 256;
 int noMqttConnectionCount = 0;
 const int noMqttConnectionCountLimit = 5;
 // MQTT Subscribe
@@ -91,8 +93,12 @@ const int DIGITAL_PIN_LED_MQTT_CONNECTED = CONTROLLINO_D2;
 const int DIGITAL_PIN_LED_MQTT_FLASH = CONTROLLINO_D3;
 
 // Relay output pins
-const int DIGITAL_PIN_RELAY_ONE = CONTROLLINO_R1; // Define relay output one
-const int DIGITAL_PIN_RELAY_TWO = CONTROLLINO_R2; // Define relay output two
+// const int DIGITAL_PIN_RELAY_ONE = CONTROLLINO_RELAY_06; // Define relay output one
+// const int DIGITAL_PIN_RELAY_TWO = CONTROLLINO_RELAY_07; // Define relay output two
+
+const int DIGITAL_PIN_RELAY_ONE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10; // Define relay output one
+const int DIGITAL_PIN_RELAY_TWO = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11; // Define relay output two
+
 
 // Output powered status
 bool outputOnePoweredStatus = false;
@@ -164,7 +170,7 @@ void checkEthernetConnection() {
    case 4:   Serial.println("DHCP: Rebind success"); break;
    default:  Serial.println("DHCP: Unexpected number"); break;
   }
-  // The 2 lines below calse a crash for some reason.
+  // The 2 lines below cause a crash for some reason!!!
   // print your local IP address:
   // Serial.println("Current IP address: " + Ethernet.localIP());
 }
@@ -188,6 +194,9 @@ void publishNodeHealth() {
   doc1["ClientName"] = String(clientName);
   doc1["IP"] = String(bufIP);
   doc1["MAC"] = "Find it from the router"; //String(bufMAC); 
+  doc1["RSSI"] = "n/a"; //String(WiFi.RSSI());
+  doc1["HostName"] = "n/a"; //String(WiFi.hostname());
+  doc1["ConnectedSSID"] = "n/a"; //String(WiFi.SSID());
   serializeJsonPretty(doc1, Serial);
   Serial.println(""); // Add new line as serializeJson() leaves the line open.
   char buffer[json_buffer_size];
@@ -244,7 +253,7 @@ void checkMqttConnection() {
   if (!mqttClient.connected()) {
     // We are not connected. Turn off the wifi LED
     digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW);
-    long now = millis();
+    unsigned long now = millis();
     if (now - lastReconnectAttempt > 5000) {
       lastReconnectAttempt = now;
       // Attempt to reconnect

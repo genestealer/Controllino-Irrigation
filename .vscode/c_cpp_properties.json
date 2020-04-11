@@ -47,7 +47,7 @@
                 ]
             },
             "defines": [
-                "PLATFORMIO=40201",
+                "PLATFORMIO=40301",
                 "ARDUINO_AVR_MEGA2560",
                 "MQTT_MAX_PACKET_SIZE=512",
                 "F_CPU=16000000L",
