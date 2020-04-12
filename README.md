@@ -30,33 +30,33 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
   
   ### The circuit:
    
-   Controllino Maxi - ATmega 2560-16AU with W5100 ethernet https://www.controllino.biz/product/controllino-maxi/
+    Controllino Maxi - ATmega 2560-16AU with W5100 ethernet https://www.controllino.biz/product/controllino-maxi/
    
-   pinout: https://www.controllino.biz/wp-content/uploads/2018/10/CONTROLLINO-MAXI-Pinout.pdf
+    pinout: https://www.controllino.biz/wp-content/uploads/2018/10/CONTROLLINO-MAXI-Pinout.pdf
    
-   CONTROLLINO customized bootloaders https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library/tree/master/Bootloaders/MAXI
+    CONTROLLINO customized bootloaders https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library/tree/master/Bootloaders/MAXI
     
-   W5100 ethernet (Built-In)
+    W5100 ethernet (Built-In)
     
-   12V PoE Active splitter Adapter, to power Controllino
+    12V PoE Active splitter Adapter, to power Controllino
     
-   12V Electric Solenoid Valve for Water
+    12V Electric Solenoid Valve for Water
    
-   Flyback diode: Vishay 50V 1A, Diode, 2-Pin DO-204AL 1N4001-E3/54
+    Flyback diode: Vishay 50V 1A, Diode, 2-Pin DO-204AL 1N4001-E3/54
  
  ### Inputs:
    
-   Analog Capacitive Soil Moisture Sensor V1.2 https://www.aliexpress.com/item/32832538686
+    Analog Capacitive Soil Moisture Sensor V1.2 https://www.aliexpress.com/item/32832538686
  
 ### Outputs:
    
-   CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10 (2 Amp output) - 1st water valve
+    CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10 (2 Amp output) - 1st water valve
     
-   CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11 (2 Amp output) - 2nd water valve
+    CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11 (2 Amp output) - 2nd water valve
     
-   (Note: Use could use the relays to switch higher voltages or have galvanic isolation)
+    (Note: Use could use the relays to switch higher voltages or have galvanic isolation)
     
-   Multiple on-board LEDS tos how MQTT connection, ethernet connection, status, etc    Notes:
+    Multiple on-board LEDS tos how MQTT connection, ethernet connection, status, etc    Notes:
   
   
   ### Example Bill Of Materials:
