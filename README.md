@@ -18,7 +18,12 @@ MQTT command message with 'off' payload command one of the outputs off.
 Note: My code is based on my other ESP8266 based projects, so there are may be some ESP nameing used.
 
 ### Based on ESP8266 variant: https://github.com/genestealer/Irrigation-Controller
-   
+ 
+## Screen shots of Home Assistant interface
+![Diagram](https://raw.githubusercontent.com/genestealer/Controllino-Irrigation/master/images/Home%20Assistant%20Webpage%20GUI%20Main.JPG)
+
+![Diagram](https://raw.githubusercontent.com/genestealer/Controllino-Irrigation/master/images/Home%20Assistant%20Webpage%20GUI%20Setting.JPG) 
+ 
 ## Copy of code header (may be out of date, see code for latest)
   GUI: Locally hosted home assistant on network https://www.home-assistant.io/
   
@@ -71,4 +76,6 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
     build_flags = -DMQTT_MAX_PACKET_SIZE=512
    Overide max JSON size, until libary is updated to inclde this option 
     https://github.com/knolleary/pubsubclient/issues/110#issuecomment-174953049
+
+
 
