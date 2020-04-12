@@ -28,7 +28,7 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
  
  ----------
   
-  The circuit:
+  ### The circuit:
    
    Controllino Maxi - ATmega 2560-16AU with W5100 ethernet https://www.controllino.biz/product/controllino-maxi/
    
@@ -44,11 +44,11 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
    
    Flyback diode: Vishay 50V 1A, Diode, 2-Pin DO-204AL 1N4001-E3/54
  
- Inputs:
+ ### Inputs:
    
    Analog Capacitive Soil Moisture Sensor V1.2 https://www.aliexpress.com/item/32832538686
  
- Outputs:
+### Outputs:
    
    CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10 (2 Amp output) - 1st water valve
     
@@ -59,7 +59,7 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
     Multiple on-board LEDS tos how MQTT connection, ethernet connection, status, etc    Notes:
   
   
-  #### Example Bill Of Materials:
+  ### Example Bill Of Materials:
    
    Controllino Maxi https://www.controllino.biz/product/controllino-maxi/
    
@@ -68,7 +68,7 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
     Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output https://www.aliexpress.com/item/32620368747.html
 
 
-  Edits made to the PlatformIO Project Configuration File:
+  ### Edits made to the PlatformIO Project Configuration File:
    
    build_flags = -DMQTT_MAX_PACKET_SIZE=512 = Overide max JSON size, until libary is updated to inclde this option 
     https://github.com/knolleary/pubsubclient/issues/110#issuecomment-174953049
