@@ -61,11 +61,9 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
   
   ### Example Bill Of Materials:
    
-   Controllino Maxi https://www.controllino.biz/product/controllino-maxi/
-   
-   1/2 Inch 12V Electric Solenoid Valve for Water https://www.aliexpress.com/item/32951916193.html 
-    
-   Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output https://www.aliexpress.com/item/32620368747.html
+   - [Controllino Maxi](https://www.controllino.biz/product/controllino-maxi/)
+   - [1/2 Inch 12V Electric Solenoid Valve for Water](https://www.aliexpress.com/item/32951916193.html)
+   - [Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output]( https://www.aliexpress.com/item/32620368747.html)
 
 
   ### Edits made to the PlatformIO Project Configuration File:
