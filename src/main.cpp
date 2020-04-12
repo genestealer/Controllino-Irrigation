@@ -9,25 +9,30 @@
   ----------
   Github: https://github.com/genestealer/Controllino-Irrigation
   ----------
-  Key Libraries:
-   ArduinoJson.h           https://bblanchon.github.io/ArduinoJson/
-   Updated arduinojson to Version 6
-  ----------
   GUI: Locally hosted home assistant on network https://www.home-assistant.io/
   MQTT: Locally hosted broker on network https://mosquitto.org/
   OTA updates - not supported by default by the ATmega without flashing with custom bootloader and 
   ----------
   The circuit:
-    Controllino Maxi - ATmega 2560-16AU with W5100 ethernet
-    https://www.controllino.biz/wp-content/uploads/2018/10/CONTROLLINO-MAXI-Pinout.pdf
+    Controllino Maxi - ATmega 2560-16AU with W5100 ethernet https://www.controllino.biz/product/controllino-maxi/
+      pinout: https://www.controllino.biz/wp-content/uploads/2018/10/CONTROLLINO-MAXI-Pinout.pdf
     CONTROLLINO customized bootloaders https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library/tree/master/Bootloaders/MAXI
   Inputs:
     Analog Capacitive Soil Moisture Sensor V1.2 https://www.aliexpress.com/item/32832538686
     W5100 ethernet (Built-In)
+    12V PoE Active splitter Adapter, to power Controllino.
   Outputs:
-    Relay one output - GPIO pin 28 (CONTROLLINO Relay 6)
-    Relay two output - GPIO pin 29 (CONTROLLINO Relay 7)
+    CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10 (2 Amp output) - 1st water valve
+    CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11 (2 Amp output) - 2nd water valve
+        (Note: Use could use the relays to switch higher voltages or have galvanic isolation)
     Multiple on-board LEDS
+  Example Bill Of Materials:
+    Controllino Maxi https://www.controllino.biz/product/controllino-maxi/
+    1/2 Inch 12V Electric Solenoid Valve for Water
+    Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output
+  ----------
+
+
     ----------
   Notes:
     Multiple on-board LEDS toshow MQTT connection, ethernet connection, status, etc
@@ -46,7 +51,7 @@
 // Note: Libaries are inluced in "Project Dependencies" file platformio.ini
 #include <private.h>               // Passwords etc not for github
 #include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-#include <ArduinoJson.h>           // For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
+#include <ArduinoJson.h>           // Updated arduinojson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
 #include <Arduino.h>               // Core Arduino libary https://github.com/arduino/Arduino
 #include <Controllino.h>           // Core Arduino Controllino libary https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
 #include <SPI.h>                   // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
