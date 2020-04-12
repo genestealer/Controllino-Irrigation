@@ -36,11 +36,11 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
    
    CONTROLLINO customized bootloaders https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library/tree/master/Bootloaders/MAXI
     
-    W5100 ethernet (Built-In)
+   W5100 ethernet (Built-In)
     
-    12V PoE Active splitter Adapter, to power Controllino
+   12V PoE Active splitter Adapter, to power Controllino
     
-    12V Electric Solenoid Valve for Water
+   12V Electric Solenoid Valve for Water
    
    Flyback diode: Vishay 50V 1A, Diode, 2-Pin DO-204AL 1N4001-E3/54
  
@@ -52,11 +52,11 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
    
    CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10 (2 Amp output) - 1st water valve
     
-    CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11 (2 Amp output) - 2nd water valve
+   CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11 (2 Amp output) - 2nd water valve
     
-    (Note: Use could use the relays to switch higher voltages or have galvanic isolation)
+   (Note: Use could use the relays to switch higher voltages or have galvanic isolation)
     
-    Multiple on-board LEDS tos how MQTT connection, ethernet connection, status, etc    Notes:
+   Multiple on-board LEDS tos how MQTT connection, ethernet connection, status, etc    Notes:
   
   
   ### Example Bill Of Materials:
@@ -65,11 +65,12 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
    
    1/2 Inch 12V Electric Solenoid Valve for Water https://www.aliexpress.com/item/32951916193.html 
     
-    Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output https://www.aliexpress.com/item/32620368747.html
+   Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output https://www.aliexpress.com/item/32620368747.html
 
 
   ### Edits made to the PlatformIO Project Configuration File:
    
-   build_flags = -DMQTT_MAX_PACKET_SIZE=512 = Overide max JSON size, until libary is updated to inclde this option 
+    build_flags = -DMQTT_MAX_PACKET_SIZE=512
+   Overide max JSON size, until libary is updated to inclde this option 
     https://github.com/knolleary/pubsubclient/issues/110#issuecomment-174953049
 
