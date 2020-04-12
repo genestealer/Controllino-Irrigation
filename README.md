@@ -17,7 +17,7 @@ MQTT command message with 'off' payload command one of the outputs off.
     
 Note: My code is based on my other ESP8266 based projects, so there are may be some ESP nameing used.
 
-### ESP8266 variant: https://github.com/genestealer/Irrigation-Controller
+### Based on ESP8266 variant: https://github.com/genestealer/Irrigation-Controller
    
 ## Copy of code header (may be out of date, see code for latest)
   GUI: Locally hosted home assistant on network https://www.home-assistant.io/
