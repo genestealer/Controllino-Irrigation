@@ -49,7 +49,7 @@
 #include <Ethernet.h>              // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
 
 // Ethernet parameters
-byte mac[] = { 0xDE, 0xAD, 0xAD, 0xEF, 0xFE, 0xED };
+byte mac[] = secret_byte;
 const int noWifiConnectionCountLimit = 5;
 int noEthernetConnectionCountRebootCount = 0;
 const int noEthernetConnectionCountRebootLimit = 5;
@@ -74,6 +74,8 @@ const int noMqttConnectionCountLimit = 5;
 // MQTT Subscribe
 const char* subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
 const char* subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
+const char* subscribeCommandTopic3 = secret_commandTopic3; // E.G. Home/Irrigation/Command3
+const char* subscribeCommandTopic4 = secret_commandTopic4; // E.G. Home/Irrigation/Command4
 // MQTT Publish
 const char* publishLastWillTopic = secret_publishLastWillTopic;              // MQTT last will
 const char* publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic;  // State of the node
@@ -89,23 +91,23 @@ const int DIGITAL_PIN_LED_MQTT_CONNECTED = CONTROLLINO_D2;
 const int DIGITAL_PIN_LED_MQTT_FLASH = CONTROLLINO_D3;
 
 // Relay output pins
-// const int DIGITAL_PIN_RELAY_ONE = CONTROLLINO_RELAY_06; // Define relay output one
-// const int DIGITAL_PIN_RELAY_TWO = CONTROLLINO_RELAY_07; // Define relay output two
-
-const int DIGITAL_PIN_RELAY_ONE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10; // Define relay output one
-const int DIGITAL_PIN_RELAY_TWO = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11; // Define relay output two
-
+const int DIGITAL_PIN_OUTPUT_ONE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11; // Define output one
+const int DIGITAL_PIN_OUTPUT_TWO = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10; // Define output two
+const int DIGITAL_PIN_OUTPUT_THREE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_09; // Define output one
+const int DIGITAL_PIN_OUTPUT_FOUR = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08; // Define output one
 
 // Output powered status
 bool outputOnePoweredStatus = false;
 bool outputTwoPoweredStatus = false;
+bool outputThreePoweredStatus = false;
+bool outputFourPoweredStatus = false;
 
 // Sensor Inputs
 const int ANALOGUE_PIN_ONE = CONTROLLINO_A0; // Define analogue input one
 
 // Define state machine states
 typedef enum {
-  s_idle1 = 0,          // state idle
+  s_idle1 = 0,         // state idle
   s_Output1Start = 1,  // state start
   s_Output1On = 2,     // state on
   s_Output1Stop = 3,   // state stop
@@ -113,7 +115,7 @@ typedef enum {
 int stateMachine1 = 0;
 
 typedef enum {
-  s_idle2 = 0,          // state idle
+  s_idle2 = 0,         // state idle
   s_Output2Start = 1,  // state start
   s_Output2On = 2,     // state on
   s_Output2Stop = 3,   // state stop
@@ -121,8 +123,26 @@ typedef enum {
 int stateMachine2 = 0;
 
 typedef enum {
+  s_idle3 = 0,         // state idle
+  s_Output3Start = 1,  // state start
+  s_Output3On = 2,     // state on
+  s_Output3Stop = 3,   // state stop
+} e_state3;
+int stateMachine3 = 0;
+
+typedef enum {
+  s_idle4 = 0,         // state idle
+  s_Output4Start = 1,  // state start
+  s_Output4On = 2,     // state on
+  s_Output4Stop = 3,   // state stop
+} e_state4;
+int stateMachine4 = 0;
+
+typedef enum {
   outputOne = 0,
   outputTwo = 1,
+  outputThree = 2,
+  outputFour = 3,
 } irrigationOutputs;
 
 // Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of network/server connection break)
@@ -210,6 +230,8 @@ void publishNodeHealth() {
 void mqttSubscribe() {
   mqttClient.subscribe(subscribeCommandTopic1);
   mqttClient.subscribe(subscribeCommandTopic2);
+  mqttClient.subscribe(subscribeCommandTopic3);
+  mqttClient.subscribe(subscribeCommandTopic4);
 }
 
 /*
@@ -324,6 +346,8 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
       // INFO: the data must be converted into a string; a problem occurs when using floats...
       doc["Valve1"] = String(outputOnePoweredStatus);
       doc["Valve2"] = String(outputTwoPoweredStatus);
+      doc["Valve3"] = String(outputThreePoweredStatus);
+      doc["Valve4"] = String(outputFourPoweredStatus);
       doc["SoilCapacitance"] = String(readSoilSensor());
       // doc["SoilTemperature"] = String(soilSensorTemperature);
       serializeJsonPretty(doc, Serial);
@@ -377,6 +401,18 @@ void mqttcallback(char* topic, byte* payload, unsigned int length) {
      else if (msgString == "0")
       stateMachine2 = s_Output2Stop; // Set output one to be off
     }
+  else if (srtTopic.equals(subscribeCommandTopic3)) {
+    if (msgString == "1")
+      stateMachine3 = s_Output3Start; // Set output one to be on
+     else if (msgString == "0")
+      stateMachine3 = s_Output3Stop; // Set output one to be off
+    }
+  else if (srtTopic.equals(subscribeCommandTopic4)) {
+    if (msgString == "1")
+      stateMachine4 = s_Output4Start; // Set output one to be on
+     else if (msgString == "0")
+      stateMachine4 = s_Output4Stop; // Set output one to be off
+    }
   digitalWrite(CONTROLLINO_D2, LOW); 
   Serial.println("Completeed mqttcallback() function");
 }
@@ -385,12 +421,12 @@ void controlOutputOne(bool state) {
   if (state == true) {
     // Command the output on.
     Serial.println("controlOutputOne state true");
-    digitalWrite(DIGITAL_PIN_RELAY_ONE, HIGH);
+    digitalWrite(DIGITAL_PIN_OUTPUT_ONE, HIGH);
     outputOnePoweredStatus = true;
   } else {
     // Command the output off.
     Serial.println("controlOutputOne state false");
-    digitalWrite(DIGITAL_PIN_RELAY_ONE, LOW);
+    digitalWrite(DIGITAL_PIN_OUTPUT_ONE, LOW);
     outputOnePoweredStatus = false;
   }
 }
@@ -399,13 +435,41 @@ void controlOutputTwo(bool state) {
   if (state == true) {
     // Command the output on.
     Serial.println("controlOutputTwo state true");
-    digitalWrite(DIGITAL_PIN_RELAY_TWO, HIGH);
+    digitalWrite(DIGITAL_PIN_OUTPUT_TWO, HIGH);
     outputTwoPoweredStatus = true;
   } else {
     // Command the output off.
     Serial.println("controlOutputTwo state false");
-    digitalWrite(DIGITAL_PIN_RELAY_TWO, LOW);
+    digitalWrite(DIGITAL_PIN_OUTPUT_TWO, LOW);
     outputTwoPoweredStatus = false;
+  }
+}
+
+void controlOutputThree(bool state) {
+  if (state == true) {
+    // Command the output on.
+    Serial.println("controlOutputThree state true");
+    digitalWrite(DIGITAL_PIN_OUTPUT_THREE, HIGH);
+    outputThreePoweredStatus = true;
+  } else {
+    // Command the output off.
+    Serial.println("controlOutputThree state false");
+    digitalWrite(DIGITAL_PIN_OUTPUT_THREE, LOW);
+    outputThreePoweredStatus = false;
+  }
+}
+
+void controlOutputFour(bool state) {
+  if (state == true) {
+    // Command the output on.
+    Serial.println("controlOutputFour state true");
+    digitalWrite(DIGITAL_PIN_OUTPUT_FOUR, HIGH);
+    outputFourPoweredStatus = true;
+  } else {
+    // Command the output off.
+    Serial.println("controlOutputFour state false");
+    digitalWrite(DIGITAL_PIN_OUTPUT_FOUR, LOW);
+    outputFourPoweredStatus = false;
   }
 }
 
@@ -497,16 +561,97 @@ void checkState2() {
   }
 }
 
+// Output 3 State Machine
+void checkState3() {
+  switch (stateMachine3) {
+
+    case s_idle3:
+      // State is currently: idle
+      break;
+
+    case s_Output3Start:
+      // State is currently: starting
+      Serial.println("State is currently: starting output three");
+      // Command the output on.
+      controlOutputThree(true);
+      mqttPublishStatusData(true); // Immediate publish cycle
+      // Start watchdog duration timer.
+      watchdogTimeStarted = millis();
+      stateMachine3 = s_Output3On;
+      break;
+
+    case s_Output3On:
+      // State is currently: On
+      // Check if we need to stop, by checking for watchdog duration timer.
+      if (checkWatchdog())
+        stateMachine3 = s_Output3Stop;
+      break;
+
+    case s_Output3Stop:
+      // State is currently: stopping
+      Serial.println("State is currently: stopping output three");
+      // Command the output off.
+      controlOutputThree(false);
+      mqttPublishStatusData(true); // Immediate publish cycle
+      // Set state mahcine to idle on the next loop
+      stateMachine3 = s_idle3;
+      break;
+  }
+}
+
+
+// Output 4 State Machine
+void checkState4() {
+  switch (stateMachine4) {
+
+    case s_idle4:
+      // State is currently: idle
+      break;
+
+    case s_Output4Start:
+      // State is currently: starting
+      Serial.println("State is currently: starting output four");
+      // Command the output on.
+      controlOutputFour(true);
+      mqttPublishStatusData(true); // Immediate publish cycle
+      // Start watchdog duration timer.
+      watchdogTimeStarted = millis();
+      stateMachine4 = s_Output4On;
+      break;
+
+    case s_Output4On:
+      // State is currently: On
+      // Check if we need to stop, by checking for watchdog duration timer.
+      if (checkWatchdog())
+        stateMachine4 = s_Output4Stop;
+      break;
+
+    case s_Output4Stop:
+      // State is currently: stopping
+      Serial.println("State is currently: stopping output four");
+      // Command the output off.
+      controlOutputFour(false);
+      mqttPublishStatusData(true); // Immediate publish cycle
+      // Set state mahcine to idle on the next loop
+      stateMachine4 = s_idle4;
+      break;
+  }
+}
+
 // Custom setup for this program.
 void customSetup() {
   // Initialize pins
-  pinMode(DIGITAL_PIN_RELAY_ONE, OUTPUT);
-  pinMode(DIGITAL_PIN_RELAY_TWO, OUTPUT);
+  pinMode(DIGITAL_PIN_OUTPUT_ONE, OUTPUT);
+  pinMode(DIGITAL_PIN_OUTPUT_TWO, OUTPUT);
+  pinMode(DIGITAL_PIN_OUTPUT_THREE, OUTPUT);
+  pinMode(DIGITAL_PIN_OUTPUT_FOUR, OUTPUT);
   pinMode(ANALOGUE_PIN_ONE, INPUT);
 
   // Initialize pin start values
-  digitalWrite(DIGITAL_PIN_RELAY_ONE, LOW);
-  digitalWrite(DIGITAL_PIN_RELAY_TWO, LOW);
+  digitalWrite(DIGITAL_PIN_OUTPUT_ONE, LOW);
+  digitalWrite(DIGITAL_PIN_OUTPUT_TWO, LOW);
+  digitalWrite(DIGITAL_PIN_OUTPUT_THREE, LOW);
+  digitalWrite(DIGITAL_PIN_OUTPUT_FOUR, LOW);
 }
 
 // Custom loop for this program.
@@ -514,6 +659,8 @@ void customLoop() {
   // Check the status and do actions
   checkState1();
   checkState2();
+  checkState3();
+  checkState4();
 }
 
 
