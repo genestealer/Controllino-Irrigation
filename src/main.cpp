@@ -1,18 +1,18 @@
 /***************************************************
   Irrigation Controller
-  Richard Huish 2017-2020
-  Controllino Maxi Ethernet based with local home-assistant.io GUI,
+  Richard Huish 2017-2024
+  Controllino Maxi Ethernet-based with local home-assistant.io GUI,
     relay output for dual irrigation control via MQTT
-    MQTT command message with 'on' payload command one of the outputs on.
-    MQTT command message with 'off' payload command one of the outputs off.
-  Note: My code is based on my other ESP8266 based projects, so there are may be some ESP nameing used.
-  ESP8266 variant: https://github.com/genestealer/Irrigation-Controller
+    MQTT command message with 'on' payload commands one of the outputs on.
+    MQTT command message with 'off' payload commands one of the outputs off.
+  Note: My code is based on my other ESP8266-based projects, so there may be some ESP naming used.
+  ESP8266 wifi variant: https://github.com/genestealer/Irrigation-Controller
   ----------
   Github: https://github.com/genestealer/Controllino-Irrigation
   ----------
   GUI: Locally hosted home assistant on network https://www.home-assistant.io/
   MQTT: Locally hosted broker on network https://mosquitto.org/
-  OTA updates: Not supported by default by the ATmega without flashing with custom bootloader and I have not done this.
+  OTA updates: Not supported by default by the ATmega without flashing with a custom bootloader and I have not done this.
   ----------
   The circuit:
     Controllino Maxi - ATmega 2560-16AU with W5100 ethernet https://www.controllino.biz/product/controllino-maxi/
@@ -27,8 +27,8 @@
   Outputs:
     CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10 (2 Amp output) - 1st water valve
     CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11 (2 Amp output) - 2nd water valve
-        (Note: Use could use the relays to switch higher voltages or have galvanic isolation)
-    Multiple on-board LEDS tos how MQTT connection, ethernet connection, status, etc    Notes:
+        (Note: You could use the relays to switch higher voltages or have galvanic isolation)
+    Multiple on-board LEDs to show MQTT connection, ethernet connection, status, etc.
   ----------
   Example Bill Of Materials:
     Controllino Maxi https://www.controllino.biz/product/controllino-maxi/
@@ -36,21 +36,20 @@
     Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output https://www.aliexpress.com/item/32620368747.html
   ----------
   Edits made to the PlatformIO Project Configuration File:
-    build_flags = -DMQTT_MAX_PACKET_SIZE=512 = Overide max JSON size, until libary is updated to inclde this option https://github.com/knolleary/pubsubclient/issues/110#issuecomment-174953049
+    build_flags = -DMQTT_MAX_PACKET_SIZE=512 // Override max JSON size, until library is updated to include this option https://github.com/knolleary/pubsubclient/issues/110#issuecomment-174953049
 ****************************************************/
 
-// Note: Libaries are inluced in "Project Dependencies" file platformio.ini
-#include <private.h>               // Passwords etc not for github
+// Note: Libraries are included in "Project Dependencies" file platformio.ini
+#include <private.h>               // Passwords etc. not for GitHub
 #include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-#include <ArduinoJson.h>           // Updated arduinojson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
-#include <Arduino.h>               // Core Arduino libary https://github.com/arduino/Arduino
-#include <Controllino.h>           // Core Arduino Controllino libary https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
+#include <ArduinoJson.h>           // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
+#include <Arduino.h>               // Core Arduino library https://github.com/arduino/Arduino
+#include <Controllino.h>           // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
 #include <SPI.h>                   // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
 #include <Ethernet.h>              // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
 
 // Ethernet parameters
 byte mac[] = secret_byte;
-const int noWifiConnectionCountLimit = 5;
 int noEthernetConnectionCountRebootCount = 0;
 const int noEthernetConnectionCountRebootLimit = 5;
 
@@ -82,7 +81,7 @@ const char* publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic;  // 
 const char* publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic;  // Health of the node
 // MQTT publish frequency
 unsigned long previousMillis = 0;
-const long publishInterval = 60000; // Publish frequency in milliseconds 60000 = 1 min
+const long publishInterval = 120000; // Publish frequency in milliseconds 120000 = 2 min
 
 // LED output parameters
 const int DIGITAL_PIN_LED_POWER_STATUS = CONTROLLINO_D0;
@@ -93,8 +92,8 @@ const int DIGITAL_PIN_LED_MQTT_FLASH = CONTROLLINO_D3;
 // Relay output pins
 const int DIGITAL_PIN_OUTPUT_ONE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11; // Define output one
 const int DIGITAL_PIN_OUTPUT_TWO = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10; // Define output two
-const int DIGITAL_PIN_OUTPUT_THREE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_09; // Define output one
-const int DIGITAL_PIN_OUTPUT_FOUR = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08; // Define output one
+const int DIGITAL_PIN_OUTPUT_THREE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_09; // Define output three
+const int DIGITAL_PIN_OUTPUT_FOUR = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08; // Define output four
 
 // Output powered status
 bool outputOnePoweredStatus = false;
@@ -153,7 +152,7 @@ float watchdogTimeStarted;
 /*
 Setup the ethernet connection. 
 Normally called only once from setup.
-Also called if the MQTT connection failes after 5 re-tries.
+Also called if the MQTT connection fails after 5 re-tries.
 */
 bool setup_ethernet() {
   // Serial.println("Inside setup_ethernet() function");
@@ -200,19 +199,19 @@ void publishNodeHealth() {
 
   // Gather data
   char bufIP[16]; // IP address
-  // char bufMAC[6]; // MAC address
+  char bufMAC[18]; // MAC address (formatted as XX:XX:XX:XX:XX:XX)
   sprintf(bufIP, "%d.%d.%d.%d", Ethernet.localIP()[0], Ethernet.localIP()[1], Ethernet.localIP()[2], Ethernet.localIP()[3]);
-  // sprintf(bufMAC, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);  //This line calses a delayed crash, %x expects an unsigned int, whereas this supplying a char
+
+  // Format MAC address as XX:XX:XX:XX:XX:XX
+  sprintf(bufMAC, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
   // Prepare and send the data in JSON to MQTT
   StaticJsonDocument<json_buffer_size> doc1;
   // INFO: the data must be converted into a string; a problem occurs when using floats...
   doc1["ClientName"] = String(clientName);
   doc1["IP"] = String(bufIP);
-  doc1["MAC"] = "Find it from the router"; //String(bufMAC); 
-  doc1["RSSI"] = "n/a"; //String(WiFi.RSSI());
-  doc1["HostName"] = "n/a"; //String(WiFi.hostname());
-  doc1["ConnectedSSID"] = "n/a"; //String(WiFi.SSID());
+  doc1["MAC"] = String(bufMAC); // Include the MAC address in the JSON payload
+
   serializeJsonPretty(doc1, Serial);
   Serial.println(""); // Add new line as serializeJson() leaves the line open.
   char buffer[json_buffer_size];
@@ -225,6 +224,7 @@ void publishNodeHealth() {
 
   Serial.println("Completed publishNodeHealth() function");
 }
+
 
 // Subscribe to MQTT topics
 void mqttSubscribe() {
@@ -241,22 +241,33 @@ void mqttSubscribe() {
 */
 boolean mqttReconnect() {
   Serial.println("Inside mqttReconnect() function");
-  // Attempt to connect
-  if (mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage)) {
-    Serial.println("Attempting MQTT connection...");
-    Serial.println("Call publishNodeHealth() from mqttReconnect()");
-    // Publish node state data
-    publishNodeHealth();
-    Serial.println("Call mqttSubscribe() from mqttReconnect()");
-    // Resubscribe to feeds
-    mqttSubscribe();
-    Serial.println("Connected to MQTT server");
-  } else {
-    Serial.println("Failed MQTT connection, rc=" + String(publishNodeStatusJsonTopic) + "] ");
+
+  int retryCount = 0;
+  // Retry up to 5 times if the MQTT connection fails
+  while (!mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage) && retryCount < 5) {
+    Serial.println("Failed MQTT connection, retrying...");
+    delay(1000);
+    retryCount++;
   }
-  Serial.println("Completed mqttReconnect() function");
+
+  if (retryCount == 5) {
+    Serial.println("Failed to connect to MQTT after 5 attempts. Aborting.");
+    return false;  // Return false if connection fails after retries
+  }
+
+  // If successful, proceed with publishing and subscribing
+  Serial.println("Attempting MQTT connection...");
+  Serial.println("Call publishNodeHealth() from mqttReconnect()");
+
+  // Publish node state data
+  publishNodeHealth();
+  Serial.println("Call mqttSubscribe() from mqttReconnect()");
+  mqttSubscribe();
+  Serial.println("Connected to MQTT server");
+
   return mqttClient.connected(); // Return connection state
 }
+
 
 /*
   Checks if connection to the MQTT server is ok. Client connected
@@ -264,12 +275,12 @@ boolean mqttReconnect() {
   its connection, it attempts to reconnect every 5 seconds
   without blocking the main loop.
   Called from main loop.
-  If MQTT connection fails after x attempts it tries to reconnect wifi
-  If wifi connections fails after x attempts it reboots the esp
+  If MQTT connection fails after x attempts it tries to reconnect ethernet
+  If ethernet connections fails after x attempts it reboots the esp
 */
 void checkMqttConnection() {
   if (!mqttClient.connected()) {
-    // We are not connected. Turn off the wifi LED
+    // We are not connected. Turn off the ethernet LED
     digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW);
     unsigned long now = millis();
     if (now - lastReconnectAttempt > 5000) {
@@ -283,19 +294,19 @@ void checkMqttConnection() {
         digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, HIGH);
       } else  {
         // Connection to MQTT failed.
-        // If no connection after x attempts, then reconnect wifi, if no connection after x attempts reboot.
-        noMqttConnectionCount = ++noMqttConnectionCount; //Increment the counter
+        // If no connection after x attempts, then reconnect ethernet, if no connection after x attempts reboot.
+        noMqttConnectionCount++; //Increment the counter
         Serial.println("MQTT connection attempt number: " + String(noMqttConnectionCount));
         if (noMqttConnectionCount > noMqttConnectionCountLimit) {
           // Max MQTT connection attempts reached, reconnect ethernet.
           noMqttConnectionCount = 0; // Reset MQTT connection attempt counter.
           Serial.println("MQTT connection count limit reached, reconnecting ethernet");
-          // Try to reconnect wifi, if this fails after x attemps then reboot.
+          // Try to reconnect Ethernet, if this fails after x attemps then reboot.
           if (!setup_ethernet()) {
-            noEthernetConnectionCountRebootCount = ++noEthernetConnectionCountRebootCount;
-            Serial.println("Wifi connection attempt number: " + String(noEthernetConnectionCountRebootCount));
+            noEthernetConnectionCountRebootCount++; //Increment the counter
+            Serial.println("Ethernet connection attempt number: " + String(noEthernetConnectionCountRebootCount));
             if (noEthernetConnectionCountRebootCount > noEthernetConnectionCountRebootLimit) {
-              Serial.println("Wifi re-connection count limit reached, reboot arduino");
+              Serial.println("Ethernet re-connection count limit reached, reboot arduino");
               // Reboot
               // ESP.restart();
               // resetFunc(); //call reset 
@@ -329,6 +340,7 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
   unsigned long currentMillis = millis();
   if (currentMillis - previousMillis >= publishInterval || ignorePublishInterval == true) {
     previousMillis = currentMillis; // Save the last time this ran
+    Serial.println("");
     Serial.println("##############################################");
     Serial.println("Inside mqttPublishStatusData() function");
     digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, HIGH); // Light LED whilst in this fuction
@@ -362,60 +374,81 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
     Serial.println("Complete mqttPublishStatusData() function");
     digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW); // Turn off LED
     }
+  Serial.println("##############################################");
+  Serial.println("");
+  Serial.println("");
   }
 }
 
 // MQTT payload
-void mqttcallback(char* topic, byte* payload, unsigned int length) {
-  //If you want to publish a message from within the message callback function, it is necessary to make a copy of the topic and payload values as the client uses the same internal buffer for inbound and outbound messages:
-  //http://www.hivemq.com/blog/mqtt-client-library-encyclopedia-arduino-pubsubclient/
-  Serial.println("Inside mqttcallback() function");
-  digitalWrite(CONTROLLINO_D2, HIGH); 
+// Add a flag to prevent simultaneous state changes
+bool stateChanging = false;  // Flag to indicate state transition in progress
 
-  Serial.println("Message arrived [" + String(topic) + "] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
+void mqttcallback(char* topic, byte* payload, unsigned int length) {
+  // If state is already changing, ignore new state transitions
+  if (stateChanging) {
+    return;  // Prevent multiple state transitions simultaneously
   }
-  Serial.println();
-  // Create character buffer with ending null terminator (string)
-  int i = 0;
-  for (i = 0; i < length; i++) {
-    message_buff[i] = payload[i];
-  }
-  message_buff[i] = '\0';
-  // Check the value of the message
-  String msgString = String(message_buff);
+
+  stateChanging = true;  // Set flag to indicate state change
+
+  Serial.println("");
+  Serial.println("**********************************************");
+
+  Serial.println("Inside mqttcallback() function. Data received.");
+  digitalWrite(CONTROLLINO_D2, HIGH);
+
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.println("]");
+
+  // Directly copy the payload into message_buff and null-terminate it
+  memcpy(message_buff, payload, length);
+  message_buff[length] = '\0';  // Ensure null-termination
+
+  String msgString = String(message_buff);  // Convert to string once
   Serial.println(msgString);
-  // Check the message topic
+
+  // Check the message topic and update state accordingly
   String srtTopic = topic;
 
+  // Using a switch-case structure for better scalability
   if (srtTopic.equals(subscribeCommandTopic1)) {
-    if (msgString == "1")
+    if (msgString == "1") {
       stateMachine1 = s_Output1Start; // Set output one to be on
-    else if (msgString == "0")
+    } else if (msgString == "0") {
       stateMachine1 = s_Output1Stop; // Set output one to be off
     }
+  }
   else if (srtTopic.equals(subscribeCommandTopic2)) {
-    if (msgString == "1")
-      stateMachine2 = s_Output2Start; // Set output one to be on
-     else if (msgString == "0")
-      stateMachine2 = s_Output2Stop; // Set output one to be off
+    if (msgString == "1") {
+      stateMachine2 = s_Output2Start; // Set output two to be on
+    } else if (msgString == "0") {
+      stateMachine2 = s_Output2Stop; // Set output two to be off
     }
+  }
   else if (srtTopic.equals(subscribeCommandTopic3)) {
-    if (msgString == "1")
-      stateMachine3 = s_Output3Start; // Set output one to be on
-     else if (msgString == "0")
-      stateMachine3 = s_Output3Stop; // Set output one to be off
+    if (msgString == "1") {
+      stateMachine3 = s_Output3Start; // Set output three to be on
+    } else if (msgString == "0") {
+      stateMachine3 = s_Output3Stop; // Set output three to be off
     }
+  }
   else if (srtTopic.equals(subscribeCommandTopic4)) {
-    if (msgString == "1")
-      stateMachine4 = s_Output4Start; // Set output one to be on
-     else if (msgString == "0")
-      stateMachine4 = s_Output4Stop; // Set output one to be off
+    if (msgString == "1") {
+      stateMachine4 = s_Output4Start; // Set output four to be on
+    } else if (msgString == "0") {
+      stateMachine4 = s_Output4Stop; // Set output four to be off
     }
+  }
+
+  stateChanging = false;  // Reset flag after state transition
   digitalWrite(CONTROLLINO_D2, LOW); 
-  Serial.println("Completeed mqttcallback() function");
+
+  Serial.println("Completed mqttcallback() function");
+  Serial.println("");
 }
+
 
 void controlOutputOne(bool state) {
   if (state == true) {
@@ -479,10 +512,10 @@ bool checkWatchdog() {
     Serial.println("checkWatchdog: duration exceeded");
     return true;
   }
-  // Else
+  // Reset the timer if the outputs are off (meaning no issue detected)
+  watchdogTimeStarted = millis();  // Reset the watchdog timer if no timeout condition
   return false;
 }
-
 
 // State machines for controller
 // Output 1 State Machine
