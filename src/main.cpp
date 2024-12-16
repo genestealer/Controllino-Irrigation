@@ -32,7 +32,7 @@
   ----------
   Example Bill Of Materials:
     Controllino Maxi https://www.controllino.biz/product/controllino-maxi/
-    1/2 Inch 12V Electric Solenoid Valve for Water https://www.aliexpress.com/item/32951916193.html 
+    1/2 Inch 12V Electric Solenoid Valve for Water https://www.aliexpress.com/item/32951916193.html
     Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output https://www.aliexpress.com/item/32620368747.html
   ----------
   Edits made to the PlatformIO Project Configuration File:
@@ -40,13 +40,13 @@
 ****************************************************/
 
 // Note: Libraries are included in "Project Dependencies" file platformio.ini
-#include <private.h>               // Passwords etc. not for GitHub
-#include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-#include <ArduinoJson.h>           // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
-#include <Arduino.h>               // Core Arduino library https://github.com/arduino/Arduino
-#include <Controllino.h>           // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
-#include <SPI.h>                   // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
-#include <Ethernet.h>              // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
+#include <private.h>      // Passwords etc. not for GitHub
+#include <PubSubClient.h> // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
+#include <ArduinoJson.h>  // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
+#include <Arduino.h>      // Core Arduino library https://github.com/arduino/Arduino
+#include <Controllino.h>  // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
+#include <SPI.h>          // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
+#include <Ethernet.h>     // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
 
 // Ethernet parameters
 byte mac[] = secret_byte;
@@ -59,26 +59,26 @@ PubSubClient mqttClient(ethClient);
 
 // MQTT Settings
 char message_buff[100];
-long lastReconnectAttempt = 0; // Reconnecting MQTT - non-blocking https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
-const char* mqtt_server = secret_mqtt_server; // E.G. 192.168.1.xx
-const char* clientName = secret_clientName; // Client to report to MQTT
-const char* mqtt_username = secret_mqtt_username; // MQTT Username
-const char* mqtt_password = secret_mqtt_password; // MQTT Password
-bool willRetain = true; // MQTT Last Will and Testament
-const char* willMessage = "offline"; // MQTT Last Will and Testament Message
-#define json_buffer_size	(256) // Correct buffer overflow, ref https://github.com/knolleary/pubsubclient/commit/98ad16eff8848bffeb812c4d347dfdb5ddef5a31
+long lastReconnectAttempt = 0;                    // Reconnecting MQTT - non-blocking https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
+const char *mqtt_server = secret_mqtt_server;     // E.G. 192.168.1.xx
+const char *clientName = secret_clientName;       // Client to report to MQTT
+const char *mqtt_username = secret_mqtt_username; // MQTT Username
+const char *mqtt_password = secret_mqtt_password; // MQTT Password
+bool willRetain = true;                           // MQTT Last Will and Testament
+const char *willMessage = "offline";              // MQTT Last Will and Testament Message
+#define json_buffer_size (256)                    // Correct buffer overflow, ref https://github.com/knolleary/pubsubclient/commit/98ad16eff8848bffeb812c4d347dfdb5ddef5a31
 // const int json_buffer_size = 256;
 int noMqttConnectionCount = 0;
 const int noMqttConnectionCountLimit = 5;
 // MQTT Subscribe
-const char* subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
-const char* subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
-const char* subscribeCommandTopic3 = secret_commandTopic3; // E.G. Home/Irrigation/Command3
-const char* subscribeCommandTopic4 = secret_commandTopic4; // E.G. Home/Irrigation/Command4
+const char *subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
+const char *subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
+const char *subscribeCommandTopic3 = secret_commandTopic3; // E.G. Home/Irrigation/Command3
+const char *subscribeCommandTopic4 = secret_commandTopic4; // E.G. Home/Irrigation/Command4
 // MQTT Publish
-const char* publishLastWillTopic = secret_publishLastWillTopic;              // MQTT last will
-const char* publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic;  // State of the node
-const char* publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic;  // Health of the node
+const char *publishLastWillTopic = secret_publishLastWillTopic;             // MQTT last will
+const char *publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic; // State of the node
+const char *publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic; // Health of the node
 // MQTT publish frequency
 unsigned long previousMillis = 0;
 const long publishInterval = 120000; // Publish frequency in milliseconds 120000 = 2 min
@@ -90,10 +90,10 @@ const int DIGITAL_PIN_LED_MQTT_CONNECTED = CONTROLLINO_D2;
 const int DIGITAL_PIN_LED_MQTT_FLASH = CONTROLLINO_D3;
 
 // Relay output pins
-const int DIGITAL_PIN_OUTPUT_ONE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11; // Define output one
-const int DIGITAL_PIN_OUTPUT_TWO = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10; // Define output two
+const int DIGITAL_PIN_OUTPUT_ONE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11;   // Define output one
+const int DIGITAL_PIN_OUTPUT_TWO = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10;   // Define output two
 const int DIGITAL_PIN_OUTPUT_THREE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_09; // Define output three
-const int DIGITAL_PIN_OUTPUT_FOUR = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08; // Define output four
+const int DIGITAL_PIN_OUTPUT_FOUR = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08;  // Define output four
 
 // Output powered status
 bool outputOnePoweredStatus = false;
@@ -105,39 +105,44 @@ bool outputFourPoweredStatus = false;
 const int ANALOGUE_PIN_ONE = CONTROLLINO_A0; // Define analogue input one
 
 // Define state machine states
-typedef enum {
-  s_idle1 = 0,         // state idle
-  s_Output1Start = 1,  // state start
-  s_Output1On = 2,     // state on
-  s_Output1Stop = 3,   // state stop
+typedef enum
+{
+  s_idle1 = 0,        // state idle
+  s_Output1Start = 1, // state start
+  s_Output1On = 2,    // state on
+  s_Output1Stop = 3,  // state stop
 } e_state1;
 int stateMachine1 = 0;
 
-typedef enum {
-  s_idle2 = 0,         // state idle
-  s_Output2Start = 1,  // state start
-  s_Output2On = 2,     // state on
-  s_Output2Stop = 3,   // state stop
+typedef enum
+{
+  s_idle2 = 0,        // state idle
+  s_Output2Start = 1, // state start
+  s_Output2On = 2,    // state on
+  s_Output2Stop = 3,  // state stop
 } e_state2;
 int stateMachine2 = 0;
 
-typedef enum {
-  s_idle3 = 0,         // state idle
-  s_Output3Start = 1,  // state start
-  s_Output3On = 2,     // state on
-  s_Output3Stop = 3,   // state stop
+typedef enum
+{
+  s_idle3 = 0,        // state idle
+  s_Output3Start = 1, // state start
+  s_Output3On = 2,    // state on
+  s_Output3Stop = 3,  // state stop
 } e_state3;
 int stateMachine3 = 0;
 
-typedef enum {
-  s_idle4 = 0,         // state idle
-  s_Output4Start = 1,  // state start
-  s_Output4On = 2,     // state on
-  s_Output4Stop = 3,   // state stop
+typedef enum
+{
+  s_idle4 = 0,        // state idle
+  s_Output4Start = 1, // state start
+  s_Output4On = 2,    // state on
+  s_Output4Stop = 3,  // state stop
 } e_state4;
 int stateMachine4 = 0;
 
-typedef enum {
+typedef enum
+{
   outputOne = 0,
   outputTwo = 1,
   outputThree = 2,
@@ -145,28 +150,32 @@ typedef enum {
 } irrigationOutputs;
 
 // Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of network/server connection break)
-float watchdogDurationTimeSetMillis = 3600000; //60 mins = 3600000 millis
+float watchdogDurationTimeSetMillis = 3600000; // 60 mins = 3600000 millis
 float watchdogTimeStarted;
 
-
 /*
-Setup the ethernet connection. 
+Setup the ethernet connection.
 Normally called only once from setup.
 Also called if the MQTT connection fails after 5 re-tries.
 */
-bool setup_ethernet() {
+bool setup_ethernet()
+{
   // Serial.println("Inside setup_ethernet() function");
   // Serial.println("Initialize Ethernet with DHCP:");
-  if (Ethernet.begin(mac) == 0) {
+  if (Ethernet.begin(mac) == 0)
+  {
     Serial.println("Failed to configure Ethernet using DHCP");
     // Check for Ethernet hardware present
-    if (Ethernet.hardwareStatus() == EthernetNoHardware) {
+    if (Ethernet.hardwareStatus() == EthernetNoHardware)
+    {
       Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware.");
       // while (true) {
       //   delay(1); // do nothing, no point running without Ethernet hardware
       return false;
     }
-  } else {
+  }
+  else
+  {
     Serial.print("  DHCP assigned IP ");
     Serial.println(Ethernet.localIP());
     digitalWrite(DIGITAL_PIN_LED_NETWORK_CONNECTED, HIGH); // Lights on HIGH.
@@ -175,30 +184,44 @@ bool setup_ethernet() {
   return false; // Catch all
 }
 
-void checkEthernetConnection() {
+void checkEthernetConnection()
+{
   Serial.println("Inside checkEthernetConnection() function");
-  switch(Ethernet.maintain()) {
-   case 0:   Serial.println("DHCP: Nothing happened"); break;
-   case 1:   Serial.println("DHCP: Renew failed"); break;
-   case 2:   Serial.println("DHCP: Renew success"); break;
-   case 3:   Serial.println("DHCP: Rebind fail"); break;
-   case 4:   Serial.println("DHCP: Rebind success"); break;
-   default:  Serial.println("DHCP: Unexpected number"); break;
+  switch (Ethernet.maintain())
+  {
+  case 0:
+    Serial.println("DHCP: Nothing happened");
+    break;
+  case 1:
+    Serial.println("DHCP: Renew failed");
+    break;
+  case 2:
+    Serial.println("DHCP: Renew success");
+    break;
+  case 3:
+    Serial.println("DHCP: Rebind fail");
+    break;
+  case 4:
+    Serial.println("DHCP: Rebind success");
+    break;
+  default:
+    Serial.println("DHCP: Unexpected number");
+    break;
   }
   // The 2 lines below cause a crash for some reason!!!
   // print your local IP address:
   // Serial.println("Current IP address: " + Ethernet.localIP());
 }
 
-
 // Publish this nodes state via MQTT
-void publishNodeHealth() {
+void publishNodeHealth()
+{
   Serial.println("Inside publishNodeHealth() function");
   // Update status to online, retained = true - last will Message will drop in if we go offline
   mqttClient.publish(publishLastWillTopic, "online", true);
 
   // Gather data
-  char bufIP[16]; // IP address
+  char bufIP[16];  // IP address
   char bufMAC[18]; // MAC address (formatted as XX:XX:XX:XX:XX:XX)
   sprintf(bufIP, "%d.%d.%d.%d", Ethernet.localIP()[0], Ethernet.localIP()[1], Ethernet.localIP()[2], Ethernet.localIP()[3]);
 
@@ -217,7 +240,7 @@ void publishNodeHealth() {
   char buffer[json_buffer_size];
   // Serialize to a temporary buffer
   serializeJson(doc1, buffer);
-  if (!mqttClient.publish(publishNodeHealthJsonTopic, buffer, true))  //Retain data.
+  if (!mqttClient.publish(publishNodeHealthJsonTopic, buffer, true)) // Retain data.
     Serial.println("Failed to publish JSON sensor data to [" + String(publishNodeHealthJsonTopic) + "]");
   else
     Serial.println("JSON Sensor data published to [" + String(publishNodeHealthJsonTopic) + "] ");
@@ -225,9 +248,9 @@ void publishNodeHealth() {
   Serial.println("Completed publishNodeHealth() function");
 }
 
-
 // Subscribe to MQTT topics
-void mqttSubscribe() {
+void mqttSubscribe()
+{
   mqttClient.subscribe(subscribeCommandTopic1);
   mqttClient.subscribe(subscribeCommandTopic2);
   mqttClient.subscribe(subscribeCommandTopic3);
@@ -239,20 +262,23 @@ void mqttSubscribe() {
   Called from checkMqttConnection.
   Based on example from 5ace47b Sep 7, 2015 https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
 */
-boolean mqttReconnect() {
+boolean mqttReconnect()
+{
   Serial.println("Inside mqttReconnect() function");
 
   int retryCount = 0;
   // Retry up to 5 times if the MQTT connection fails
-  while (!mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage) && retryCount < 5) {
+  while (!mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage) && retryCount < 5)
+  {
     Serial.println("Failed MQTT connection, retrying...");
     delay(1000);
     retryCount++;
   }
 
-  if (retryCount == 5) {
+  if (retryCount == 5)
+  {
     Serial.println("Failed to connect to MQTT after 5 attempts. Aborting.");
-    return false;  // Return false if connection fails after retries
+    return false; // Return false if connection fails after retries
   }
 
   // If successful, proceed with publishing and subscribing
@@ -268,7 +294,6 @@ boolean mqttReconnect() {
   return mqttClient.connected(); // Return connection state
 }
 
-
 /*
   Checks if connection to the MQTT server is ok. Client connected
   using a non-blocking reconnect function. If the client loses
@@ -278,67 +303,79 @@ boolean mqttReconnect() {
   If MQTT connection fails after x attempts it tries to reconnect ethernet
   If ethernet connections fails after x attempts it reboots the esp
 */
-void checkMqttConnection() {
-  if (!mqttClient.connected()) {
+void checkMqttConnection()
+{
+  if (!mqttClient.connected())
+  {
     // We are not connected. Turn off the ethernet LED
     digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW);
     unsigned long now = millis();
-    if (now - lastReconnectAttempt > 5000) {
+    if (now - lastReconnectAttempt > 5000)
+    {
       lastReconnectAttempt = now;
       // Attempt to reconnect
-      if (mqttReconnect()) {
+      if (mqttReconnect())
+      {
         // We are connected.
         lastReconnectAttempt = 0;
         noMqttConnectionCount = 0;
         noEthernetConnectionCountRebootCount = 0;
         digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, HIGH);
-      } else  {
+      }
+      else
+      {
         // Connection to MQTT failed.
         // If no connection after x attempts, then reconnect ethernet, if no connection after x attempts reboot.
-        noMqttConnectionCount++; //Increment the counter
+        noMqttConnectionCount++; // Increment the counter
         Serial.println("MQTT connection attempt number: " + String(noMqttConnectionCount));
-        if (noMqttConnectionCount > noMqttConnectionCountLimit) {
+        if (noMqttConnectionCount > noMqttConnectionCountLimit)
+        {
           // Max MQTT connection attempts reached, reconnect ethernet.
           noMqttConnectionCount = 0; // Reset MQTT connection attempt counter.
           Serial.println("MQTT connection count limit reached, reconnecting ethernet");
           // Try to reconnect Ethernet, if this fails after x attemps then reboot.
-          if (!setup_ethernet()) {
-            noEthernetConnectionCountRebootCount++; //Increment the counter
+          if (!setup_ethernet())
+          {
+            noEthernetConnectionCountRebootCount++; // Increment the counter
             Serial.println("Ethernet connection attempt number: " + String(noEthernetConnectionCountRebootCount));
-            if (noEthernetConnectionCountRebootCount > noEthernetConnectionCountRebootLimit) {
+            if (noEthernetConnectionCountRebootCount > noEthernetConnectionCountRebootLimit)
+            {
               Serial.println("Ethernet re-connection count limit reached, reboot arduino");
               // Reboot
               // ESP.restart();
-              // resetFunc(); //call reset 
+              // resetFunc(); //call reset
             }
           }
         }
       }
-
-
     }
-  } else {
+  }
+  else
+  {
     // Client connected: MQTT client loop processing
     mqttClient.loop();
   }
 }
 
 // Read soil sensor and return its value.
-int readSoilSensor() {
-    // Read Soil Sensor Capacitance
-    int sensorValue = analogRead(ANALOGUE_PIN_ONE);
-    Serial.println("Soil Moisture Capacitance: " + String(sensorValue));
-    return sensorValue;
+int readSoilSensor()
+{
+  // Read Soil Sensor Capacitance
+  int sensorValue = analogRead(ANALOGUE_PIN_ONE);
+  Serial.println("Soil Moisture Capacitance: " + String(sensorValue));
+  return sensorValue;
 }
 
 /*
 MQTT Publish with normal or immediate option.
 Serialize JSON document into an MQTT message.
 */
-void mqttPublishStatusData(bool ignorePublishInterval) {
+void mqttPublishStatusData(bool ignorePublishInterval)
+{
   // Only run when publishInterval in milliseconds expires or ignorePublishInterval == true
   unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= publishInterval || ignorePublishInterval == true) {
+  if (currentMillis - previousMillis >= publishInterval || ignorePublishInterval == true)
+  {
     previousMillis = currentMillis; // Save the last time this ran
     Serial.println("");
     Serial.println("##############################################");
@@ -346,9 +383,10 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
     digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, HIGH); // Light LED whilst in this fuction
     // Check ethernet connection
     checkEthernetConnection();
-        
+
     // Check connection to MQTT server
-    if (mqttClient.connected()) {
+    if (mqttClient.connected())
+    {
 
       // Publish node state data
       publishNodeHealth();
@@ -367,30 +405,32 @@ void mqttPublishStatusData(bool ignorePublishInterval) {
       char buffer[json_buffer_size];
       // Serialize to a temporary buffer
       serializeJson(doc, buffer);
-      if (!mqttClient.publish(publishNodeStatusJsonTopic, buffer, true))  //Retain data.
+      if (!mqttClient.publish(publishNodeStatusJsonTopic, buffer, true)) // Retain data.
         Serial.println("Failed to publish JSON sensor data to [" + String(publishNodeStatusJsonTopic) + "]");
       else
         Serial.println("JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
-    Serial.println("Complete mqttPublishStatusData() function");
-    digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW); // Turn off LED
+      Serial.println("Complete mqttPublishStatusData() function");
+      digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW); // Turn off LED
     }
-  Serial.println("##############################################");
-  Serial.println("");
-  Serial.println("");
+    Serial.println("##############################################");
+    Serial.println("");
+    Serial.println("");
   }
 }
 
 // MQTT payload
 // Add a flag to prevent simultaneous state changes
-bool stateChanging = false;  // Flag to indicate state transition in progress
+bool stateChanging = false; // Flag to indicate state transition in progress
 
-void mqttcallback(char* topic, byte* payload, unsigned int length) {
+void mqttcallback(char *topic, byte *payload, unsigned int length)
+{
   // If state is already changing, ignore new state transitions
-  if (stateChanging) {
-    return;  // Prevent multiple state transitions simultaneously
+  if (stateChanging)
+  {
+    return; // Prevent multiple state transitions simultaneously
   }
 
-  stateChanging = true;  // Set flag to indicate state change
+  stateChanging = true; // Set flag to indicate state change
 
   Serial.println("");
   Serial.println("**********************************************");
@@ -404,59 +444,78 @@ void mqttcallback(char* topic, byte* payload, unsigned int length) {
 
   // Directly copy the payload into message_buff and null-terminate it
   memcpy(message_buff, payload, length);
-  message_buff[length] = '\0';  // Ensure null-termination
+  message_buff[length] = '\0'; // Ensure null-termination
 
-  String msgString = String(message_buff);  // Convert to string once
+  String msgString = String(message_buff); // Convert to string once
   Serial.println(msgString);
 
   // Check the message topic and update state accordingly
   String srtTopic = topic;
 
   // Using a switch-case structure for better scalability
-  if (srtTopic.equals(subscribeCommandTopic1)) {
-    if (msgString == "1") {
+  if (srtTopic.equals(subscribeCommandTopic1))
+  {
+    if (msgString == "1")
+    {
       stateMachine1 = s_Output1Start; // Set output one to be on
-    } else if (msgString == "0") {
+    }
+    else if (msgString == "0")
+    {
       stateMachine1 = s_Output1Stop; // Set output one to be off
     }
   }
-  else if (srtTopic.equals(subscribeCommandTopic2)) {
-    if (msgString == "1") {
+  else if (srtTopic.equals(subscribeCommandTopic2))
+  {
+    if (msgString == "1")
+    {
       stateMachine2 = s_Output2Start; // Set output two to be on
-    } else if (msgString == "0") {
+    }
+    else if (msgString == "0")
+    {
       stateMachine2 = s_Output2Stop; // Set output two to be off
     }
   }
-  else if (srtTopic.equals(subscribeCommandTopic3)) {
-    if (msgString == "1") {
+  else if (srtTopic.equals(subscribeCommandTopic3))
+  {
+    if (msgString == "1")
+    {
       stateMachine3 = s_Output3Start; // Set output three to be on
-    } else if (msgString == "0") {
+    }
+    else if (msgString == "0")
+    {
       stateMachine3 = s_Output3Stop; // Set output three to be off
     }
   }
-  else if (srtTopic.equals(subscribeCommandTopic4)) {
-    if (msgString == "1") {
+  else if (srtTopic.equals(subscribeCommandTopic4))
+  {
+    if (msgString == "1")
+    {
       stateMachine4 = s_Output4Start; // Set output four to be on
-    } else if (msgString == "0") {
+    }
+    else if (msgString == "0")
+    {
       stateMachine4 = s_Output4Stop; // Set output four to be off
     }
   }
 
-  stateChanging = false;  // Reset flag after state transition
-  digitalWrite(CONTROLLINO_D2, LOW); 
+  stateChanging = false; // Reset flag after state transition
+  digitalWrite(CONTROLLINO_D2, LOW);
 
   Serial.println("Completed mqttcallback() function");
   Serial.println("");
 }
 
-
-void controlOutputOne(bool state) {
-  if (state == true) {
+void controlOutputOne(bool state)
+{
+  if (state == true)
+  {
     // Command the output on.
     Serial.println("controlOutputOne state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_ONE, HIGH);
     outputOnePoweredStatus = true;
-  } else {
+  }
+  else
+  {
     // Command the output off.
     Serial.println("controlOutputOne state false");
     digitalWrite(DIGITAL_PIN_OUTPUT_ONE, LOW);
@@ -464,13 +523,17 @@ void controlOutputOne(bool state) {
   }
 }
 
-void controlOutputTwo(bool state) {
-  if (state == true) {
+void controlOutputTwo(bool state)
+{
+  if (state == true)
+  {
     // Command the output on.
     Serial.println("controlOutputTwo state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_TWO, HIGH);
     outputTwoPoweredStatus = true;
-  } else {
+  }
+  else
+  {
     // Command the output off.
     Serial.println("controlOutputTwo state false");
     digitalWrite(DIGITAL_PIN_OUTPUT_TWO, LOW);
@@ -478,13 +541,17 @@ void controlOutputTwo(bool state) {
   }
 }
 
-void controlOutputThree(bool state) {
-  if (state == true) {
+void controlOutputThree(bool state)
+{
+  if (state == true)
+  {
     // Command the output on.
     Serial.println("controlOutputThree state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_THREE, HIGH);
     outputThreePoweredStatus = true;
-  } else {
+  }
+  else
+  {
     // Command the output off.
     Serial.println("controlOutputThree state false");
     digitalWrite(DIGITAL_PIN_OUTPUT_THREE, LOW);
@@ -492,13 +559,17 @@ void controlOutputThree(bool state) {
   }
 }
 
-void controlOutputFour(bool state) {
-  if (state == true) {
+void controlOutputFour(bool state)
+{
+  if (state == true)
+  {
     // Command the output on.
     Serial.println("controlOutputFour state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_FOUR, HIGH);
     outputFourPoweredStatus = true;
-  } else {
+  }
+  else
+  {
     // Command the output off.
     Serial.println("controlOutputFour state false");
     digitalWrite(DIGITAL_PIN_OUTPUT_FOUR, LOW);
@@ -506,173 +577,183 @@ void controlOutputFour(bool state) {
   }
 }
 
-bool checkWatchdog() {
-  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis) {
+bool checkWatchdog()
+{
+  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis)
+  {
     // Stop, as we must have lost connection to the server and output has been on too long.
     Serial.println("checkWatchdog: duration exceeded");
     return true;
   }
   // Reset the timer if the outputs are off (meaning no issue detected)
-  watchdogTimeStarted = millis();  // Reset the watchdog timer if no timeout condition
+  watchdogTimeStarted = millis(); // Reset the watchdog timer if no timeout condition
   return false;
 }
 
 // State machines for controller
 // Output 1 State Machine
-void checkState1() {
-  switch (stateMachine1) {
+void checkState1()
+{
+  switch (stateMachine1)
+  {
 
-    case s_idle1:
-      // State is currently: idle
-      break;
+  case s_idle1:
+    // State is currently: idle
+    break;
 
-    case s_Output1Start:
-      // State is currently: starting
-      Serial.println("State is currently: starting output one");
-      // Command the output on.
-      controlOutputOne(true);
-      mqttPublishStatusData(true); // Immediate publish cycle
-      // Start watchdog duration timer.
-      watchdogTimeStarted = millis();
-      stateMachine1 = s_Output1On;
-      break;
+  case s_Output1Start:
+    // State is currently: starting
+    Serial.println("State is currently: starting output one");
+    // Command the output on.
+    controlOutputOne(true);
+    mqttPublishStatusData(true); // Immediate publish cycle
+    // Start watchdog duration timer.
+    watchdogTimeStarted = millis();
+    stateMachine1 = s_Output1On;
+    break;
 
-    case s_Output1On:
-      // State is currently: On
-      // Check if we need to stop, by checking for watchdog duration timer.
-      if (checkWatchdog())
-        stateMachine1 = s_Output1Stop;
-      break;
+  case s_Output1On:
+    // State is currently: On
+    // Check if we need to stop, by checking for watchdog duration timer.
+    if (checkWatchdog())
+      stateMachine1 = s_Output1Stop;
+    break;
 
-    case s_Output1Stop:
-      // State is currently: stopping
-      Serial.println("State is currently: stopping output one");
-      // Command the output off.
-      controlOutputOne(false);
-      mqttPublishStatusData(true); // Immediate publish cycle
-      // Set state mahcine to idle on the next loop
-      stateMachine1 = s_idle1;
-      break;
+  case s_Output1Stop:
+    // State is currently: stopping
+    Serial.println("State is currently: stopping output one");
+    // Command the output off.
+    controlOutputOne(false);
+    mqttPublishStatusData(true); // Immediate publish cycle
+    // Set state mahcine to idle on the next loop
+    stateMachine1 = s_idle1;
+    break;
   }
 }
 
 // Output 2 State Machine
-void checkState2() {
-  switch (stateMachine2) {
+void checkState2()
+{
+  switch (stateMachine2)
+  {
 
-    case s_idle2:
-      // State is currently: idle
-      break;
+  case s_idle2:
+    // State is currently: idle
+    break;
 
-    case s_Output2Start:
-      // State is currently: starting
-      Serial.println("State is currently: starting output two");
-      // Command the output on.
-      controlOutputTwo(true);
-      mqttPublishStatusData(true); // Immediate publish cycle
-      // Start watchdog duration timer.
-      watchdogTimeStarted = millis();
-      stateMachine2 = s_Output2On;
-      break;
+  case s_Output2Start:
+    // State is currently: starting
+    Serial.println("State is currently: starting output two");
+    // Command the output on.
+    controlOutputTwo(true);
+    mqttPublishStatusData(true); // Immediate publish cycle
+    // Start watchdog duration timer.
+    watchdogTimeStarted = millis();
+    stateMachine2 = s_Output2On;
+    break;
 
-    case s_Output2On:
-      // State is currently: On
-      // Check if we need to stop, by checking for watchdog duration timer.
-      if (checkWatchdog())
-        stateMachine2 = s_Output2Stop;
-      break;
+  case s_Output2On:
+    // State is currently: On
+    // Check if we need to stop, by checking for watchdog duration timer.
+    if (checkWatchdog())
+      stateMachine2 = s_Output2Stop;
+    break;
 
-    case s_Output2Stop:
-      // State is currently: stopping
-      Serial.println("State is currently: stopping output two");
-      // Command the output off.
-      controlOutputTwo(false);
-      mqttPublishStatusData(true); // Immediate publish cycle
-      // Set state mahcine to idle on the next loop
-      stateMachine2 = s_idle2;
-      break;
+  case s_Output2Stop:
+    // State is currently: stopping
+    Serial.println("State is currently: stopping output two");
+    // Command the output off.
+    controlOutputTwo(false);
+    mqttPublishStatusData(true); // Immediate publish cycle
+    // Set state mahcine to idle on the next loop
+    stateMachine2 = s_idle2;
+    break;
   }
 }
 
 // Output 3 State Machine
-void checkState3() {
-  switch (stateMachine3) {
+void checkState3()
+{
+  switch (stateMachine3)
+  {
 
-    case s_idle3:
-      // State is currently: idle
-      break;
+  case s_idle3:
+    // State is currently: idle
+    break;
 
-    case s_Output3Start:
-      // State is currently: starting
-      Serial.println("State is currently: starting output three");
-      // Command the output on.
-      controlOutputThree(true);
-      mqttPublishStatusData(true); // Immediate publish cycle
-      // Start watchdog duration timer.
-      watchdogTimeStarted = millis();
-      stateMachine3 = s_Output3On;
-      break;
+  case s_Output3Start:
+    // State is currently: starting
+    Serial.println("State is currently: starting output three");
+    // Command the output on.
+    controlOutputThree(true);
+    mqttPublishStatusData(true); // Immediate publish cycle
+    // Start watchdog duration timer.
+    watchdogTimeStarted = millis();
+    stateMachine3 = s_Output3On;
+    break;
 
-    case s_Output3On:
-      // State is currently: On
-      // Check if we need to stop, by checking for watchdog duration timer.
-      if (checkWatchdog())
-        stateMachine3 = s_Output3Stop;
-      break;
+  case s_Output3On:
+    // State is currently: On
+    // Check if we need to stop, by checking for watchdog duration timer.
+    if (checkWatchdog())
+      stateMachine3 = s_Output3Stop;
+    break;
 
-    case s_Output3Stop:
-      // State is currently: stopping
-      Serial.println("State is currently: stopping output three");
-      // Command the output off.
-      controlOutputThree(false);
-      mqttPublishStatusData(true); // Immediate publish cycle
-      // Set state mahcine to idle on the next loop
-      stateMachine3 = s_idle3;
-      break;
+  case s_Output3Stop:
+    // State is currently: stopping
+    Serial.println("State is currently: stopping output three");
+    // Command the output off.
+    controlOutputThree(false);
+    mqttPublishStatusData(true); // Immediate publish cycle
+    // Set state mahcine to idle on the next loop
+    stateMachine3 = s_idle3;
+    break;
   }
 }
 
-
 // Output 4 State Machine
-void checkState4() {
-  switch (stateMachine4) {
+void checkState4()
+{
+  switch (stateMachine4)
+  {
 
-    case s_idle4:
-      // State is currently: idle
-      break;
+  case s_idle4:
+    // State is currently: idle
+    break;
 
-    case s_Output4Start:
-      // State is currently: starting
-      Serial.println("State is currently: starting output four");
-      // Command the output on.
-      controlOutputFour(true);
-      mqttPublishStatusData(true); // Immediate publish cycle
-      // Start watchdog duration timer.
-      watchdogTimeStarted = millis();
-      stateMachine4 = s_Output4On;
-      break;
+  case s_Output4Start:
+    // State is currently: starting
+    Serial.println("State is currently: starting output four");
+    // Command the output on.
+    controlOutputFour(true);
+    mqttPublishStatusData(true); // Immediate publish cycle
+    // Start watchdog duration timer.
+    watchdogTimeStarted = millis();
+    stateMachine4 = s_Output4On;
+    break;
 
-    case s_Output4On:
-      // State is currently: On
-      // Check if we need to stop, by checking for watchdog duration timer.
-      if (checkWatchdog())
-        stateMachine4 = s_Output4Stop;
-      break;
+  case s_Output4On:
+    // State is currently: On
+    // Check if we need to stop, by checking for watchdog duration timer.
+    if (checkWatchdog())
+      stateMachine4 = s_Output4Stop;
+    break;
 
-    case s_Output4Stop:
-      // State is currently: stopping
-      Serial.println("State is currently: stopping output four");
-      // Command the output off.
-      controlOutputFour(false);
-      mqttPublishStatusData(true); // Immediate publish cycle
-      // Set state mahcine to idle on the next loop
-      stateMachine4 = s_idle4;
-      break;
+  case s_Output4Stop:
+    // State is currently: stopping
+    Serial.println("State is currently: stopping output four");
+    // Command the output off.
+    controlOutputFour(false);
+    mqttPublishStatusData(true); // Immediate publish cycle
+    // Set state mahcine to idle on the next loop
+    stateMachine4 = s_idle4;
+    break;
   }
 }
 
 // Custom setup for this program.
-void customSetup() {
+void customSetup()
+{
   // Initialize pins
   pinMode(DIGITAL_PIN_OUTPUT_ONE, OUTPUT);
   pinMode(DIGITAL_PIN_OUTPUT_TWO, OUTPUT);
@@ -688,7 +769,8 @@ void customSetup() {
 }
 
 // Custom loop for this program.
-void customLoop() {
+void customLoop()
+{
   // Check the status and do actions
   checkState1();
   checkState2();
@@ -696,8 +778,8 @@ void customLoop() {
   checkState4();
 }
 
-
-void setup() {
+void setup()
+{
   // Set serial speed
   Serial.begin(115200);
   Serial.println("Setup Starting");
@@ -714,23 +796,21 @@ void setup() {
   pinMode(CONTROLLINO_D9, OUTPUT);
   pinMode(CONTROLLINO_D10, OUTPUT);
 
-  
   // Initialize pin start values
-  digitalWrite(DIGITAL_PIN_LED_POWER_STATUS, HIGH); 
-  digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW); 
-  digitalWrite(DIGITAL_PIN_LED_NETWORK_CONNECTED, LOW); 
-  digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW); 
-
+  digitalWrite(DIGITAL_PIN_LED_POWER_STATUS, HIGH);
+  digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW);
+  digitalWrite(DIGITAL_PIN_LED_NETWORK_CONNECTED, LOW);
+  digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW);
 
   // Set startup debug LED #1
-  digitalWrite(CONTROLLINO_D6, HIGH); 
+  digitalWrite(CONTROLLINO_D6, HIGH);
   delay(250);
-  
+
   // Setup ethernet
   setup_ethernet();
 
-// Set startup debug LED #2
-  digitalWrite(CONTROLLINO_D7, HIGH); 
+  // Set startup debug LED #2
+  digitalWrite(CONTROLLINO_D7, HIGH);
   delay(250);
 
   // Set MQTT settings
@@ -740,7 +820,7 @@ void setup() {
   checkMqttConnection();
 
   // Set startup debug LED #3
-  digitalWrite(CONTROLLINO_D8, HIGH); 
+  digitalWrite(CONTROLLINO_D8, HIGH);
   delay(250);
 
   // Setup for this project.
@@ -750,7 +830,8 @@ void setup() {
 }
 
 // Main working loop
-void loop() {
+void loop()
+{
   // Check connection to the MQTT server
   checkMqttConnection();
 
