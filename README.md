@@ -71,10 +71,9 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
 
 
   ### Edits made to the PlatformIO Project Configuration File:
-   
-    build_flags = -DMQTT_MAX_PACKET_SIZE=512
-   Overide max JSON size, until libary is updated to inclde this option 
-    https://github.com/knolleary/pubsubclient/issues/110#issuecomment-174953049
-
-
+    platform = atmelavr
+    board = controllino_maxi
+    framework = arduino
+    lib_deps = PubSubClient, ArduinoJson, SPI, Ethernet, Controllino, I2CSoilMoistureSensor, Wire
+    monitor_speed = 115200
 
