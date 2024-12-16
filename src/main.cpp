@@ -848,6 +848,8 @@ void setup()
   customSetup();
 
   Serial.println("  Setup Complete");
+  Serial.println("");
+  Serial.println("");
 }
 
 // Main working loop
