@@ -1,7 +1,7 @@
 /***************************************************
   Irrigation Controller - Controllino Maxi (Ethernet-based)
   Author: Richard Huish (2017-2024)
-  
+
   **Description:**
   Dual irrigation system with local control via Home Assistant GUI and MQTT integration.
   - MQTT 'on' payload commands one output on.
@@ -48,20 +48,20 @@
     platform = atmelavr
     board = controllino_maxi
     framework = arduino
-    lib_deps = PubSubClient, ArduinoJson, SPI, Ethernet, Controllino, I2CSoilMoistureSensor, Wire
+    lib_deps = PubSubClient, ArduinoJson, SPI, arduino-libraries/Ethernet, Controllino, Apollon77/I2CSoilMoistureSensor, Wire
     monitor_speed = 115200
 
 ****************************************************/
 
-
 // Note: Libraries are included in "Project Dependencies" file platformio.ini
-#include <private.h>      // Passwords etc. not for GitHub
-#include <PubSubClient.h> // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-#include <ArduinoJson.h>  // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
-#include <Arduino.h>      // Core Arduino library https://github.com/arduino/Arduino
-#include <Controllino.h>  // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
-#include <SPI.h>          // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
-#include <Ethernet.h>     // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
+#include <private.h>               // Passwords etc. not for GitHub
+#include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
+#include <ArduinoJson.h>           // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
+#include <Arduino.h>               // Core Arduino library https://github.com/arduino/Arduino
+#include <Controllino.h>           // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
+#include <SPI.h>                   // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
+#include <Ethernet.h>              // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
+#include <I2CSoilMoistureSensor.h> // Arduino I2C Soil Moisture Sensor https://github.com/Apollon77/I2CSoilMoistureSensor
 
 // Ethernet parameters
 byte mac[] = secret_byte;
@@ -244,7 +244,7 @@ void publishNodeHealth()
   sprintf(bufMAC, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
   // Prepare and send the data in JSON to MQTT
-  StaticJsonDocument<json_buffer_size> doc1;
+  JsonDocument doc1;
   // INFO: the data must be converted into a string; a problem occurs when using floats...
   doc1["ClientName"] = String(clientName);
   doc1["IP"] = String(bufIP);
@@ -256,11 +256,11 @@ void publishNodeHealth()
   // Serialize to a temporary buffer
   serializeJson(doc1, buffer);
   if (!mqttClient.publish(publishNodeHealthJsonTopic, buffer, true)) // Retain data.
-    Serial.println("Failed to publish JSON sensor data to [" + String(publishNodeHealthJsonTopic) + "]");
+    Serial.println("  Failed to publish JSON sensor data to [" + String(publishNodeHealthJsonTopic) + "]");
   else
-    Serial.println("JSON Sensor data published to [" + String(publishNodeHealthJsonTopic) + "] ");
+    Serial.println("  JSON Sensor data published to [" + String(publishNodeHealthJsonTopic) + "] ");
 
-  Serial.println("Completed publishNodeHealth() function");
+  Serial.println("  Completed publishNodeHealth() function");
 }
 
 // Subscribe to MQTT topics
@@ -285,26 +285,26 @@ boolean mqttReconnect()
   // Retry up to 5 times if the MQTT connection fails
   while (!mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage) && retryCount < 5)
   {
-    Serial.println("Failed MQTT connection, retrying...");
+    Serial.println("  Failed MQTT connection, retrying...");
     delay(1000);
     retryCount++;
   }
 
   if (retryCount == 5)
   {
-    Serial.println("Failed to connect to MQTT after 5 attempts. Aborting.");
+    Serial.println("  Failed to connect to MQTT after 5 attempts. Aborting.");
     return false; // Return false if connection fails after retries
   }
 
   // If successful, proceed with publishing and subscribing
-  Serial.println("Attempting MQTT connection...");
-  Serial.println("Call publishNodeHealth() from mqttReconnect()");
+  Serial.println("  Attempting MQTT connection...");
+  Serial.println("  Call publishNodeHealth() from mqttReconnect()");
 
   // Publish node state data
   publishNodeHealth();
-  Serial.println("Call mqttSubscribe() from mqttReconnect()");
+  Serial.println("  Call mqttSubscribe() from mqttReconnect()");
   mqttSubscribe();
-  Serial.println("Connected to MQTT server");
+  Serial.println("  Connected to MQTT server");
 
   return mqttClient.connected(); // Return connection state
 }
@@ -347,15 +347,15 @@ void checkMqttConnection()
         {
           // Max MQTT connection attempts reached, reconnect ethernet.
           noMqttConnectionCount = 0; // Reset MQTT connection attempt counter.
-          Serial.println("MQTT connection count limit reached, reconnecting ethernet");
+          Serial.println("  MQTT connection count limit reached, reconnecting ethernet");
           // Try to reconnect Ethernet, if this fails after x attemps then reboot.
           if (!setup_ethernet())
           {
             noEthernetConnectionCountRebootCount++; // Increment the counter
-            Serial.println("Ethernet connection attempt number: " + String(noEthernetConnectionCountRebootCount));
+            Serial.println("  Ethernet connection attempt number: " + String(noEthernetConnectionCountRebootCount));
             if (noEthernetConnectionCountRebootCount > noEthernetConnectionCountRebootLimit)
             {
-              Serial.println("Ethernet re-connection count limit reached, reboot arduino");
+              Serial.println("   Ethernet re-connection count limit reached, reboot arduino");
               // Reboot
               // ESP.restart();
               // resetFunc(); //call reset
@@ -407,7 +407,7 @@ void mqttPublishStatusData(bool ignorePublishInterval)
       publishNodeHealth();
 
       // Prepare and send the data in JSON to MQTT
-      StaticJsonDocument<json_buffer_size> doc;
+      JsonDocument doc;
       // INFO: the data must be converted into a string; a problem occurs when using floats...
       doc["Valve1"] = String(outputOnePoweredStatus);
       doc["Valve2"] = String(outputTwoPoweredStatus);
@@ -421,10 +421,10 @@ void mqttPublishStatusData(bool ignorePublishInterval)
       // Serialize to a temporary buffer
       serializeJson(doc, buffer);
       if (!mqttClient.publish(publishNodeStatusJsonTopic, buffer, true)) // Retain data.
-        Serial.println("Failed to publish JSON sensor data to [" + String(publishNodeStatusJsonTopic) + "]");
+        Serial.println("  Failed to publish JSON sensor data to [" + String(publishNodeStatusJsonTopic) + "]");
       else
-        Serial.println("JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
-      Serial.println("Complete mqttPublishStatusData() function");
+        Serial.println("  JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
+      Serial.println("  Complete mqttPublishStatusData() function");
       digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW); // Turn off LED
     }
     Serial.println("##############################################");
@@ -453,7 +453,7 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   Serial.println("Inside mqttcallback() function. Data received.");
   digitalWrite(CONTROLLINO_D2, HIGH);
 
-  Serial.print("Message arrived [");
+  Serial.print("  Message arrived [");
   Serial.print(topic);
   Serial.println("]");
 
@@ -516,7 +516,7 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   stateChanging = false; // Reset flag after state transition
   digitalWrite(CONTROLLINO_D2, LOW);
 
-  Serial.println("Completed mqttcallback() function");
+  Serial.println("  Completed mqttcallback() function");
   Serial.println("");
 }
 
@@ -797,10 +797,11 @@ void setup()
 {
   // Set serial speed
   Serial.begin(115200);
-  Serial.println("Setup Starting");
+  Serial.println("Setup Starting...");
   delay(250); // Give the IC chance to startup.
 
   // Initialize pins
+  Serial.println("Setup pins..");
   pinMode(DIGITAL_PIN_LED_POWER_STATUS, OUTPUT);
   pinMode(DIGITAL_PIN_LED_MQTT_CONNECTED, OUTPUT);
   pinMode(DIGITAL_PIN_LED_NETWORK_CONNECTED, OUTPUT);
@@ -820,28 +821,33 @@ void setup()
   // Set startup debug LED #1
   digitalWrite(CONTROLLINO_D6, HIGH);
   delay(250);
+  Serial.println("  Pins setup complete");
 
   // Setup ethernet
+  Serial.println("Setup ethernet..");
   setup_ethernet();
+  Serial.println("  Ethernet setup complete");
 
   // Set startup debug LED #2
   digitalWrite(CONTROLLINO_D7, HIGH);
   delay(250);
 
   // Set MQTT settings
+  Serial.println("Setup MQTT..");
   mqttClient.setServer(mqtt_server, 1883);
   mqttClient.setCallback(mqttcallback);
-
   checkMqttConnection();
+  Serial.println("  Setup MQTT complete");
 
   // Set startup debug LED #3
   digitalWrite(CONTROLLINO_D8, HIGH);
   delay(250);
 
   // Setup for this project.
+  Serial.println("Start custom project setup..");
   customSetup();
 
-  Serial.println("Setup Complete");
+  Serial.println("  Setup Complete");
 }
 
 // Main working loop
