@@ -1,5 +1,5 @@
 /***************************************************
-  Irrigation Controller - Controllino Maxi (Ethernet-based)
+  Irrigation Controller - Arduino Controllino Maxi (Ethernet-based)
   Author: Richard Huish (2017-2024)
 
   **Description:**
