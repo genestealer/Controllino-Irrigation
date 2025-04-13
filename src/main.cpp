@@ -54,7 +54,7 @@
 ****************************************************/
 
 // Note: Libraries are included in "Project Dependencies" file platformio.ini
-#include <private.h>               // Passwords etc. not for GitHub
+#include "private.h"               // Passwords etc. not for GitHub
 #include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
 #include <ArduinoJson.h>           // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
 #include <Arduino.h>               // Core Arduino library https://github.com/arduino/Arduino
@@ -62,6 +62,9 @@
 #include <SPI.h>                   // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
 #include <Ethernet.h>              // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
 #include <I2CSoilMoistureSensor.h> // Arduino I2C Soil Moisture Sensor https://github.com/Apollon77/I2CSoilMoistureSensor
+#include <avr/wdt.h>               // Watchdog timer library
+#include <NTPClient.h>
+#include <EthernetUdp.h>           // Use EthernetUdp for NTP communication
 
 // Ethernet parameters
 byte mac[] = secret_byte;
@@ -71,6 +74,17 @@ const int noEthernetConnectionCountRebootLimit = 5;
 // Initialize the Ethernet client library
 EthernetClient ethClient;
 PubSubClient mqttClient(ethClient);
+
+// NTP settings
+EthernetUDP ntpUDP;
+NTPClient timeClient(ntpUDP, ntp_server, 0, 86400000); // Update every 24 hours (86400000 ms)
+
+// Constants for reboot logic
+const unsigned long sevenDaysMillis = 7UL * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+unsigned long systemStartTime = 0; // Store the system start time
+const int rebootStartHour = 2; // Start of reboot window (2:00 AM)
+const int rebootEndHour = 4;   // End of reboot window (4:00 AM)
+bool ntpUpdatedToday = false;  // Flag to ensure NTP is updated only once a day
 
 // MQTT Settings
 char message_buff[100];
@@ -167,6 +181,18 @@ typedef enum
 // Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of network/server connection break)
 float watchdogDurationTimeSetMillis = 3600000; // 60 mins = 3600000 millis
 float watchdogTimeStarted;
+
+/*
+Reboot the Arduino using the watchdog timer.
+*/
+void rebootArduino()
+{
+  wdt_enable(WDTO_15MS); // Enable watchdog timer with a 15ms timeout
+  while (true)
+  {
+    // Wait for the watchdog timer to reset the Arduino
+  }
+}
 
 /*
 Setup the ethernet connection.
@@ -357,8 +383,7 @@ void checkMqttConnection()
             {
               Serial.println("   Ethernet re-connection count limit reached, reboot arduino");
               // Reboot
-              // ESP.restart();
-              // resetFunc(); //call reset
+              rebootArduino();
             }
           }
         }
@@ -766,6 +791,51 @@ void checkState4()
   }
 }
 
+/*
+  Initialize the NTP client.
+*/
+void setupNTP() {
+  timeClient.begin();
+  Serial.println("NTP client initialized.");
+}
+
+/*
+  Update the NTP time once a day.
+*/
+void updateNTPTime() {
+  if (!ntpUpdatedToday) {
+    timeClient.update();
+    Serial.print("Current NTP time: ");
+    Serial.println(timeClient.getFormattedTime());
+    ntpUpdatedToday = true;
+  }
+
+  // Reset the flag at midnight
+  if (timeClient.getHours() == 0) {
+    ntpUpdatedToday = false;
+  }
+}
+
+/*
+  Check if the system has been online for too long (7 days) and reboot during the night.
+*/
+void checkRebootCondition() {
+  unsigned long currentMillis = millis();
+  unsigned long uptimeMillis = currentMillis - systemStartTime;
+
+  // Check if uptime exceeds 7 days
+  if (uptimeMillis >= sevenDaysMillis) {
+    timeClient.update(); // Ensure we have the latest time
+    int currentHour = timeClient.getHours();
+
+    // Check if the current time is within the reboot window
+    if (currentHour >= rebootStartHour && currentHour < rebootEndHour) {
+      Serial.println("Rebooting system after 7 days of uptime...");
+      rebootArduino(); // Call the reboot function
+    }
+  }
+}
+
 // Custom setup for this program.
 void customSetup()
 {
@@ -781,6 +851,9 @@ void customSetup()
   digitalWrite(DIGITAL_PIN_OUTPUT_TWO, LOW);
   digitalWrite(DIGITAL_PIN_OUTPUT_THREE, LOW);
   digitalWrite(DIGITAL_PIN_OUTPUT_FOUR, LOW);
+
+  // Initialize NTP
+  setupNTP();
 }
 
 // Custom loop for this program.
@@ -791,6 +864,12 @@ void customLoop()
   checkState2();
   checkState3();
   checkState4();
+
+  // Update NTP time
+  updateNTPTime();
+
+  // Check reboot condition
+  checkRebootCondition();
 }
 
 void setup()
@@ -846,6 +925,9 @@ void setup()
   // Setup for this project.
   Serial.println("Start custom project setup..");
   customSetup();
+
+  // Record system start time
+  systemStartTime = millis();
 
   Serial.println("  Setup Complete");
   Serial.println("");

@@ -1,11 +1,14 @@
 
 // #define secret_mqtt_server "192.168.10.21"
+// #define ntp_server "pool.ntp.org" // NTP server for time synchronization
+
 
 // // Back Garden Config
 // #define secret_clientName "IrrigationControllinoMaxi2"
 // #define secret_mqtt_username "IrrigationController2"
 // #define secret_mqtt_password "PASSWORD"
 
+// Define MAC address for the Ethernet shield
 // #define secret_byte { 0xDE, 0xA1, 0xAD, 0xEF, 0xED, 0xFE };
 
 // #define secret_commandTopic1 "HUISHS/Irrigation2/OutputOne/Command"
