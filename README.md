@@ -77,3 +77,13 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
     lib_deps = PubSubClient, ArduinoJson, SPI, Ethernet, Controllino, I2CSoilMoistureSensor, Wire
     monitor_speed = 115200
 
+## Selecting the controller (Front vs Back) via PlatformIO
+
+You can switch between the two garden controllers without editing code by using a build flag in `platformio.ini`:
+
+  [env:controllino_maxi]
+  ; 1 = Front Garden, 2 = Back Garden
+  build_flags = -DIRRIGATION_CONTROLLER=2
+
+Override per-build by passing `--project-option "build_flags=-DIRRIGATION_CONTROLLER=1"` if needed.
+

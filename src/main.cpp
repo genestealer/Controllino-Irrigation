@@ -54,7 +54,8 @@
 ****************************************************/
 
 // Note: Libraries are included in "Project Dependencies" file platformio.ini
-#include "private.h"               // Passwords etc. not for GitHub
+// Use correct case to avoid build issues on case-sensitive filesystems
+#include "Private.h"               // Passwords etc. not for GitHub
 #include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
 #include <ArduinoJson.h>           // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
 #include <Arduino.h>               // Core Arduino library https://github.com/arduino/Arduino
@@ -179,8 +180,8 @@ typedef enum
 } irrigationOutputs;
 
 // Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of network/server connection break)
-float watchdogDurationTimeSetMillis = 3600000; // 60 mins = 3600000 millis
-float watchdogTimeStarted;
+unsigned long watchdogDurationTimeSetMillis = 3600000UL; // 60 mins = 3600000 millis
+unsigned long watchdogTimeStarted = 0UL;
 
 /*
 Reboot the Arduino using the watchdog timer.
@@ -270,7 +271,8 @@ void publishNodeHealth()
   sprintf(bufMAC, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 
   // Prepare and send the data in JSON to MQTT
-  JsonDocument doc1;
+  // Use a static JSON document with bounded capacity (saves SRAM and avoids dynamic allocation)
+  StaticJsonDocument<json_buffer_size> doc1;
   // INFO: the data must be converted into a string; a problem occurs when using floats...
   doc1["ClientName"] = String(clientName);
   doc1["IP"] = String(bufIP);
@@ -432,7 +434,8 @@ void mqttPublishStatusData(bool ignorePublishInterval)
       publishNodeHealth();
 
       // Prepare and send the data in JSON to MQTT
-      JsonDocument doc;
+      // Use a static JSON document with bounded capacity (saves SRAM and avoids dynamic allocation)
+      StaticJsonDocument<json_buffer_size> doc;
       // INFO: the data must be converted into a string; a problem occurs when using floats...
       doc["Valve1"] = String(outputOnePoweredStatus);
       doc["Valve2"] = String(outputTwoPoweredStatus);
@@ -482,9 +485,10 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   Serial.print(topic);
   Serial.println("]");
 
-  // Directly copy the payload into message_buff and null-terminate it
-  memcpy(message_buff, payload, length);
-  message_buff[length] = '\0'; // Ensure null-termination
+  // Safely copy the payload into message_buff and null-terminate it
+  unsigned int copyLen = length < sizeof(message_buff) - 1 ? length : sizeof(message_buff) - 1;
+  memcpy(message_buff, payload, copyLen);
+  message_buff[copyLen] = '\0'; // Ensure null-termination
 
   String msgString = String(message_buff); // Convert to string once
   Serial.println(msgString);
@@ -619,14 +623,22 @@ void controlOutputFour(bool state)
 
 bool checkWatchdog()
 {
-  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis)
-  {
-    // Stop, as we must have lost connection to the server and output has been on too long.
+  // Helper lambda to know if any output is currently on
+  auto anyOutputOn = []() {
+    return outputOnePoweredStatus || outputTwoPoweredStatus || outputThreePoweredStatus || outputFourPoweredStatus;
+  };
+
+  // If no outputs are on, there's nothing to watch; keep timer as-is
+  if (!anyOutputOn()) {
+    return false;
+  }
+
+  // When outputs are on, check duration
+  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis) {
     Serial.println("checkWatchdog: duration exceeded");
     return true;
   }
-  // Reset the timer if the outputs are off (meaning no issue detected)
-  watchdogTimeStarted = millis(); // Reset the watchdog timer if no timeout condition
+
   return false;
 }
 
@@ -874,6 +886,8 @@ void customLoop()
 
 void setup()
 {
+  // Ensure watchdog is disabled on startup to prevent boot loops
+  wdt_disable();
   // Set serial speed
   Serial.begin(115200);
   Serial.println("Setup Starting...");
