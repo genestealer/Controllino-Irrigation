@@ -78,10 +78,10 @@ NTPClient timeClient(ntpUDP, ntp_server, 0, 86400000); // Update every 24 hours 
 
 // Constants for reboot logic
 const unsigned long sevenDaysMillis = 7UL * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-unsigned long systemStartTime = 0; // Store the system start time
+unsigned long lastRebootCheckDate = 0; // Store the last date (epoch day) we checked for reboot
 const int rebootStartHour = 2; // Start of reboot window (2:00 AM)
 const int rebootEndHour = 4;   // End of reboot window (4:00 AM)
-bool ntpUpdatedToday = false;  // Flag to ensure NTP is updated only once a day
+unsigned long lastNtpUpdateDate = 0;  // Store the last date (epoch day) NTP was updated
 
 // MQTT Settings
 char message_buff[100];
@@ -95,7 +95,7 @@ const char *willMessage = "offline";              // MQTT Last Will and Testamen
 #define json_buffer_size (256)                    // Correct buffer overflow, ref https://github.com/knolleary/pubsubclient/commit/98ad16eff8848bffeb812c4d347dfdb5ddef5a31
 // const int json_buffer_size = 256;
 int noMqttConnectionCount = 0;
-const int noMqttConnectionCountLimit = 5;
+const int noMqttConnectionCountLimit = 5;         // Maximum MQTT reconnection attempts before Ethernet reset
 // MQTT Subscribe
 const char *subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
 const char *subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
@@ -115,7 +115,7 @@ const char *publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic; // S
 const char *publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic; // Health of the node
 // MQTT publish frequency
 unsigned long previousMillis = 0;
-const long publishInterval = 120000; // Publish frequency in milliseconds 120000 = 2 min
+const long publishInterval = 120000; // Publish frequency in milliseconds 120000 = 2 min (status updates every 2 minutes)
 
 // Home Assistant MQTT Discovery
 const char *haDiscoveryPrefix = "homeassistant"; // HA discovery root topic
@@ -636,8 +636,6 @@ void mqttPublishStatusData(bool ignorePublishInterval)
     Serial.println("##############################################");
     Serial.println("Inside mqttPublishStatusData() function");
     digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, HIGH); // Light LED whilst in this fuction
-    // Check ethernet connection
-    checkEthernetConnection();
 
     // Check connection to MQTT server
     if (mqttClient.connected())
@@ -701,6 +699,11 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   unsigned int copyLen = length < sizeof(message_buff) - 1 ? length : sizeof(message_buff) - 1;
   memcpy(message_buff, payload, copyLen);
   message_buff[copyLen] = '\0'; // Ensure null-termination
+  
+  // Warn if payload was truncated
+  if (length >= sizeof(message_buff)) {
+    Serial.println("  WARNING: Payload truncated from " + String(length) + " to " + String(copyLen) + " bytes");
+  }
 
   String msgString = String(message_buff); // Convert to string once
   Serial.println("  Payload: " + msgString);
@@ -859,14 +862,15 @@ bool checkWatchdog()
     return outputOnePoweredStatus || outputTwoPoweredStatus || outputThreePoweredStatus || outputFourPoweredStatus;
   };
 
-  // If no outputs are on, there's nothing to watch; keep timer as-is
+  // If no outputs are on, reset timer ready for next activation
   if (!anyOutputOn()) {
+    watchdogTimeStarted = millis(); // Ready for next valve activation
     return false;
   }
 
   // When outputs are on, check duration
   if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis) {
-    Serial.println("checkWatchdog: duration exceeded");
+    Serial.println("checkWatchdog: duration exceeded, shutting down all valves");
     return true;
   }
 
@@ -890,8 +894,7 @@ void checkState1()
     // Command the output on.
     controlOutputOne(true);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Start watchdog duration timer.
-    watchdogTimeStarted = millis();
+    // Watchdog timer is managed by checkWatchdog() function
     stateMachine1 = s_Output1On;
     break;
 
@@ -930,8 +933,7 @@ void checkState2()
     // Command the output on.
     controlOutputTwo(true);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Start watchdog duration timer.
-    watchdogTimeStarted = millis();
+    // Watchdog timer is managed by checkWatchdog() function
     stateMachine2 = s_Output2On;
     break;
 
@@ -970,8 +972,7 @@ void checkState3()
     // Command the output on.
     controlOutputThree(true);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Start watchdog duration timer.
-    watchdogTimeStarted = millis();
+    // Watchdog timer is managed by checkWatchdog() function
     stateMachine3 = s_Output3On;
     break;
 
@@ -1010,8 +1011,7 @@ void checkState4()
     // Command the output on.
     controlOutputFour(true);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Start watchdog duration timer.
-    watchdogTimeStarted = millis();
+    // Watchdog timer is managed by checkWatchdog() function
     stateMachine4 = s_Output4On;
     break;
 
@@ -1044,37 +1044,45 @@ void setupNTP() {
 
 /*
   Update the NTP time once a day.
+  Uses date comparison instead of hour-based flag to avoid missing midnight.
 */
 void updateNTPTime() {
-  if (!ntpUpdatedToday) {
+  // Get current date as epoch day (days since 1970-01-01)
+  unsigned long currentEpochDay = timeClient.getEpochTime() / 86400UL;
+  
+  // Update NTP if we haven't updated today
+  if (currentEpochDay != lastNtpUpdateDate) {
     timeClient.update();
-    Serial.print("Current NTP time: ");
+    lastNtpUpdateDate = currentEpochDay;
+    Serial.print("NTP updated. Current time: ");
     Serial.println(timeClient.getFormattedTime());
-    ntpUpdatedToday = true;
-  }
-
-  // Reset the flag at midnight
-  if (timeClient.getHours() == 0) {
-    ntpUpdatedToday = false;
   }
 }
 
 /*
-  Check if the system has been online for too long (7 days) and reboot during the night.
+  Check if the system should reboot (every 7 days during night hours 2-4 AM).
+  Uses NTP date tracking to avoid millis() overflow issues.
 */
 void checkRebootCondition() {
-  unsigned long currentMillis = millis();
-  unsigned long uptimeMillis = currentMillis - systemStartTime;
-
-  // Check if uptime exceeds 7 days
-  if (uptimeMillis >= sevenDaysMillis) {
-    timeClient.update(); // Ensure we have the latest time
-    int currentHour = timeClient.getHours();
-
-    // Check if the current time is within the reboot window
-    if (currentHour >= rebootStartHour && currentHour < rebootEndHour) {
-      Serial.println("Rebooting system after 7 days of uptime...");
-      rebootArduino(); // Call the reboot function
+  // Get current date as epoch day (days since 1970-01-01)
+  unsigned long currentEpochDay = timeClient.getEpochTime() / 86400UL;
+  
+  // Check if we've crossed into a new reboot eligibility period (every 7 days)
+  // Only check once per day to avoid multiple reboot attempts
+  if (currentEpochDay != lastRebootCheckDate) {
+    lastRebootCheckDate = currentEpochDay;
+    
+    // Check if we've reached 7-day interval (simplified: check if day is divisible by 7)
+    // For production, you might track actual boot date, but this provides periodic reboots
+    if ((currentEpochDay % 7) == 0) {
+      timeClient.update(); // Ensure we have the latest time
+      int currentHour = timeClient.getHours();
+      
+      // Check if the current time is within the reboot window (2-4 AM)
+      if (currentHour >= rebootStartHour && currentHour < rebootEndHour) {
+        Serial.println("Scheduled reboot: 7-day maintenance window reached");
+        rebootArduino(); // Call the reboot function
+      }
     }
   }
 }
@@ -1170,9 +1178,6 @@ void setup()
   Serial.println("Start custom project setup..");
   customSetup();
 
-  // Record system start time
-  systemStartTime = millis();
-
   Serial.println("  Setup Complete");
   Serial.println("");
   Serial.println("");
@@ -1181,6 +1186,13 @@ void setup()
 // Main working loop
 void loop()
 {
+  // Check ethernet connection periodically for DHCP maintenance
+  static unsigned long lastEthernetCheck = 0;
+  if (millis() - lastEthernetCheck >= 60000) { // Check every 60 seconds
+    checkEthernetConnection();
+    lastEthernetCheck = millis();
+  }
+
   // Check connection to the MQTT server
   checkMqttConnection();
 
