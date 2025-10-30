@@ -65,10 +65,6 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
    
     Flyback diode: Vishay 50V 1A, Diode, 2-Pin DO-204AL 1N4001-E3/54
  
- ### Inputs:
-   
-    Analog Capacitive Soil Moisture Sensor V1.2 https://www.aliexpress.com/item/32832538686
- 
 ### Outputs:
    
     CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10 (2 Amp output) - 1st water valve

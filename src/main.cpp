@@ -25,7 +25,6 @@
   - Power: 12V PoE Active Splitter Adapter (IEEE 802.3af compliant)
   - Valves: 12V Electric Solenoid Valves for water control
   - Protection: Vishay 1N4001 Flyback Diodes (50V 1A)
-  - Sensor: Analog Capacitive Soil Moisture Sensor V1.2 (https://www.aliexpress.com/item/32832538686)
 
   **Connections:**
   - Outputs:
@@ -34,8 +33,6 @@
     - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_09: 3rd Water Valve (2A output)
     - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08: 4th Water Valve (2A output)
       *Note: Relays can switch higher voltages or provide galvanic isolation.
-  - Inputs:
-    - Analog Soil Moisture Sensor.
   - Indicators:
     - On-board LEDs for MQTT, Ethernet, and system status.
 
@@ -48,7 +45,7 @@
     platform = atmelavr
     board = controllino_maxi
     framework = arduino
-    lib_deps = PubSubClient, ArduinoJson, SPI, arduino-libraries/Ethernet, Controllino, Apollon77/I2CSoilMoistureSensor, Wire
+    lib_deps = PubSubClient, ArduinoJson, SPI, arduino-libraries/Ethernet, Controllino, NTPClient
     monitor_speed = 115200
 
 ****************************************************/
@@ -62,7 +59,6 @@
 #include <Controllino.h>           // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
 #include <SPI.h>                   // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
 #include <Ethernet.h>              // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
-#include <I2CSoilMoistureSensor.h> // Arduino I2C Soil Moisture Sensor https://github.com/Apollon77/I2CSoilMoistureSensor
 #include <avr/wdt.h>               // Watchdog timer library
 #include <NTPClient.h>
 #include <EthernetUdp.h>           // Use EthernetUdp for NTP communication
@@ -105,6 +101,14 @@ const char *subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigati
 const char *subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
 const char *subscribeCommandTopic3 = secret_commandTopic3; // E.G. Home/Irrigation/Command3
 const char *subscribeCommandTopic4 = secret_commandTopic4; // E.G. Home/Irrigation/Command4
+// MQTT State publish topics (for HA discovery switch state)
+const char *stateTopic1 = secret_stateTopic1;   // E.G. Home/Irrigation/State1
+const char *stateTopic2 = secret_stateTopic2;   // E.G. Home/Irrigation/State2
+const char *stateTopic3 = secret_stateTopic3;   // E.G. Home/Irrigation/State3
+const char *stateTopic4 = secret_stateTopic4;   // E.G. Home/Irrigation/State4
+// MQTT Watchdog duration control
+const char *watchdogCommandTopic = "Home/Irrigation/Watchdog/Command";      // Command topic for watchdog duration (in minutes)
+const char *watchdogStateTopic = "Home/Irrigation/Watchdog/State";          // State topic for watchdog duration (in minutes)
 // MQTT Publish
 const char *publishLastWillTopic = secret_publishLastWillTopic;             // MQTT last will
 const char *publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic; // State of the node
@@ -112,6 +116,12 @@ const char *publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic; // H
 // MQTT publish frequency
 unsigned long previousMillis = 0;
 const long publishInterval = 120000; // Publish frequency in milliseconds 120000 = 2 min
+
+// Home Assistant MQTT Discovery
+const char *haDiscoveryPrefix = "homeassistant"; // HA discovery root topic
+
+// Forward declarations
+void mqttPublishStatusData(bool ignorePublishInterval);
 
 // LED output parameters
 const int DIGITAL_PIN_LED_POWER_STATUS = CONTROLLINO_D0;
@@ -130,9 +140,6 @@ bool outputOnePoweredStatus = false;
 bool outputTwoPoweredStatus = false;
 bool outputThreePoweredStatus = false;
 bool outputFourPoweredStatus = false;
-
-// Sensor Inputs
-const int ANALOGUE_PIN_ONE = CONTROLLINO_A0; // Define analogue input one
 
 // Define state machine states
 typedef enum
@@ -180,7 +187,8 @@ typedef enum
 } irrigationOutputs;
 
 // Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of network/server connection break)
-unsigned long watchdogDurationTimeSetMillis = 3600000UL; // 60 mins = 3600000 millis
+int watchdogDurationMinutes = 60;                        // Default: 60 minutes (controllable via MQTT)
+unsigned long watchdogDurationTimeSetMillis = 3600000UL; // Calculated from watchdogDurationMinutes (60 mins = 3600000 millis)
 unsigned long watchdogTimeStarted = 0UL;
 
 /*
@@ -291,6 +299,213 @@ void publishNodeHealth()
   Serial.println("  Completed publishNodeHealth() function");
 }
 
+// Publish valve state to its dedicated state topic for HA
+void publishValveState(uint8_t valveIndex, bool isOn)
+{
+  const char *topic = nullptr;
+  switch (valveIndex)
+  {
+  case 1:
+    topic = stateTopic1;
+    break;
+  case 2:
+    topic = stateTopic2;
+    break;
+  case 3:
+    topic = stateTopic3;
+    break;
+  case 4:
+    topic = stateTopic4;
+    break;
+  default:
+    return;
+  }
+  // Use proper valve state payloads: "open" or "closed"
+  const char *payload = isOn ? "open" : "closed";
+  if (!mqttClient.publish(topic, payload, true))
+  {
+    Serial.println("  Failed to publish valve state to [" + String(topic) + "]");
+  }
+  else
+  {
+    Serial.println("  Published valve " + String(valveIndex) + " state: " + String(payload));
+  }
+}
+
+void publishAllValveStates()
+{
+  publishValveState(1, outputOnePoweredStatus);
+  publishValveState(2, outputTwoPoweredStatus);
+  publishValveState(3, outputThreePoweredStatus);
+  publishValveState(4, outputFourPoweredStatus);
+}
+
+// Publish watchdog duration state to MQTT
+void publishWatchdogState()
+{
+  char buffer[10];
+  itoa(watchdogDurationMinutes, buffer, 10);
+  if (!mqttClient.publish(watchdogStateTopic, buffer, true))
+  {
+    Serial.println("  Failed to publish watchdog state");
+  }
+  else
+  {
+    Serial.println("  Published watchdog duration: " + String(watchdogDurationMinutes) + " minutes");
+  }
+}
+
+// Update watchdog duration from minutes to milliseconds
+void updateWatchdogDuration()
+{
+  watchdogDurationTimeSetMillis = (unsigned long)watchdogDurationMinutes * 60000UL;
+  Serial.println("  Watchdog duration updated to " + String(watchdogDurationMinutes) + " minutes (" + String(watchdogDurationTimeSetMillis) + " ms)");
+}
+
+// Publish Home Assistant MQTT Discovery configs (retained)
+void publishHADiscovery()
+{
+  Serial.println("Publishing Home Assistant MQTT Discovery configs...");
+
+  // Device info shared among entities
+  const char *nodeId = clientName; // use clientName as node_id
+
+  // Build and publish valve configs for 4 irrigation valves
+  for (uint8_t i = 1; i <= 4; i++)
+  {
+    // Discovery topic: <prefix>/valve/<node_id>/valve<i>/config
+    String topic = String(haDiscoveryPrefix) + "/valve/" + nodeId + "/valve" + String(i) + "/config";
+
+    StaticJsonDocument<512> cfg;
+    // Friendly name - set to null to inherit device name
+    cfg["name"] = String("Valve ") + String(i);
+    // Unique id
+    cfg["unique_id"] = String(nodeId) + String("_valve") + String(i);
+    // Device class for water valves
+    cfg["device_class"] = "water";
+    // Topics
+    switch (i)
+    {
+    case 1:
+      cfg["cmd_t"] = subscribeCommandTopic1;
+      cfg["stat_t"] = stateTopic1;
+      break;
+    case 2:
+      cfg["cmd_t"] = subscribeCommandTopic2;
+      cfg["stat_t"] = stateTopic2;
+      break;
+    case 3:
+      cfg["cmd_t"] = subscribeCommandTopic3;
+      cfg["stat_t"] = stateTopic3;
+      break;
+    case 4:
+      cfg["cmd_t"] = subscribeCommandTopic4;
+      cfg["stat_t"] = stateTopic4;
+      break;
+    }
+    // Valve command payloads (OPEN/CLOSE are HA defaults)
+    cfg["pl_open"] = "OPEN";
+    cfg["pl_cls"] = "CLOSE";
+    // State payloads (open/closed are HA defaults)
+    cfg["stat_open"] = "open";
+    cfg["stat_clsd"] = "closed";
+    // Valve does not report position
+    cfg["reports_position"] = false;
+    // Availability
+    cfg["avty_t"] = publishLastWillTopic;
+    cfg["pl_avail"] = "online";
+    cfg["pl_not_avail"] = "offline";
+    // Optimistic mode (state updates immediately without waiting for feedback)
+    cfg["optimistic"] = false;
+
+    // Device metadata
+    JsonObject dev = cfg.createNestedObject("device");
+    JsonArray idArr = dev.createNestedArray("identifiers");
+    idArr.add(nodeId);
+    dev["name"] = nodeId;
+    dev["model"] = "Controllino Maxi";
+    dev["manufacturer"] = "Controllino";
+    dev["sw_version"] = "2024.1.0";
+
+    // Origin info (who created this discovery message)
+    JsonObject origin = cfg.createNestedObject("o");
+    origin["name"] = "Controllino-Irrigation";
+    origin["sw"] = "2024.1.0";
+    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
+
+    char payload[512];
+    size_t n = serializeJson(cfg, payload, sizeof(payload));
+    if (n == 0 || n >= sizeof(payload))
+    {
+      Serial.println("  Discovery payload too large for valve " + String(i));
+    }
+    else
+    {
+      if (!mqttClient.publish(topic.c_str(), payload, true))
+      {
+        Serial.println("  Failed to publish discovery to [" + topic + "]");
+      }
+      else
+      {
+        Serial.println("  Published discovery for valve " + String(i));
+      }
+    }
+  }
+
+  // Publish watchdog duration number entity for Home Assistant
+  {
+    String topic = String(haDiscoveryPrefix) + "/number/" + nodeId + "/watchdog/config";
+    StaticJsonDocument<512> cfg;
+    cfg["name"] = "Watchdog Duration";
+    cfg["unique_id"] = String(nodeId) + "_watchdog_duration";
+    cfg["cmd_t"] = watchdogCommandTopic;
+    cfg["stat_t"] = watchdogStateTopic;
+    cfg["unit_of_meas"] = "min";
+    cfg["min"] = 0;
+    cfg["max"] = 120;
+    cfg["step"] = 1;
+    cfg["mode"] = "slider";
+    cfg["icon"] = "mdi:timer-sand";
+    cfg["avty_t"] = publishLastWillTopic;
+    cfg["pl_avail"] = "online";
+    cfg["pl_not_avail"] = "offline";
+    cfg["entity_category"] = "config";
+
+    // Device metadata
+    JsonObject dev = cfg.createNestedObject("device");
+    JsonArray idArr = dev.createNestedArray("identifiers");
+    idArr.add(nodeId);
+    dev["name"] = nodeId;
+    dev["model"] = "Controllino Maxi";
+    dev["manufacturer"] = "Controllino";
+    dev["sw_version"] = "2024.1.0";
+
+    // Origin info
+    JsonObject origin = cfg.createNestedObject("o");
+    origin["name"] = "Controllino-Irrigation";
+    origin["sw"] = "2024.1.0";
+    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
+
+    char payload[512];
+    size_t n = serializeJson(cfg, payload, sizeof(payload));
+    if (n == 0 || n >= sizeof(payload))
+    {
+      Serial.println("  Discovery payload too large for watchdog");
+    }
+    else
+    {
+      if (!mqttClient.publish(topic.c_str(), payload, true))
+      {
+        Serial.println("  Failed to publish watchdog discovery");
+      }
+      else
+      {
+        Serial.println("  Published discovery for watchdog duration");
+      }
+    }
+  }
+}
+
 // Subscribe to MQTT topics
 void mqttSubscribe()
 {
@@ -298,6 +513,7 @@ void mqttSubscribe()
   mqttClient.subscribe(subscribeCommandTopic2);
   mqttClient.subscribe(subscribeCommandTopic3);
   mqttClient.subscribe(subscribeCommandTopic4);
+  mqttClient.subscribe(watchdogCommandTopic);
 }
 
 /*
@@ -333,6 +549,12 @@ boolean mqttReconnect()
   Serial.println("  Call mqttSubscribe() from mqttReconnect()");
   mqttSubscribe();
   Serial.println("  Connected to MQTT server");
+
+  // Home Assistant discovery and initial states
+  publishHADiscovery();
+  publishAllValveStates();
+  publishWatchdogState();
+  mqttPublishStatusData(true);
 
   return mqttClient.connected(); // Return connection state
 }
@@ -399,15 +621,6 @@ void checkMqttConnection()
   }
 }
 
-// Read soil sensor and return its value.
-int readSoilSensor()
-{
-  // Read Soil Sensor Capacitance
-  int sensorValue = analogRead(ANALOGUE_PIN_ONE);
-  Serial.println("Soil Moisture Capacitance: " + String(sensorValue));
-  return sensorValue;
-}
-
 /*
 MQTT Publish with normal or immediate option.
 Serialize JSON document into an MQTT message.
@@ -436,13 +649,12 @@ void mqttPublishStatusData(bool ignorePublishInterval)
       // Prepare and send the data in JSON to MQTT
       // Use a static JSON document with bounded capacity (saves SRAM and avoids dynamic allocation)
       StaticJsonDocument<json_buffer_size> doc;
-      // INFO: the data must be converted into a string; a problem occurs when using floats...
-      doc["Valve1"] = String(outputOnePoweredStatus);
-      doc["Valve2"] = String(outputTwoPoweredStatus);
-      doc["Valve3"] = String(outputThreePoweredStatus);
-      doc["Valve4"] = String(outputFourPoweredStatus);
-      doc["SoilCapacitance"] = String(readSoilSensor());
-      // doc["SoilTemperature"] = String(soilSensorTemperature);
+      // Publish valve states as "open" or "closed" to match HA valve entity standards
+      doc["Valve1"] = outputOnePoweredStatus ? "open" : "closed";
+      doc["Valve2"] = outputTwoPoweredStatus ? "open" : "closed";
+      doc["Valve3"] = outputThreePoweredStatus ? "open" : "closed";
+      doc["Valve4"] = outputFourPoweredStatus ? "open" : "closed";
+      doc["WatchdogMinutes"] = watchdogDurationMinutes;
       serializeJsonPretty(doc, Serial);
       Serial.println(""); // Add new line as serializeJson() leaves the line open.
       char buffer[json_buffer_size];
@@ -491,54 +703,69 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   message_buff[copyLen] = '\0'; // Ensure null-termination
 
   String msgString = String(message_buff); // Convert to string once
-  Serial.println(msgString);
+  Serial.println("  Payload: " + msgString);
 
   // Check the message topic and update state accordingly
   String srtTopic = topic;
 
-  // Using a switch-case structure for better scalability
+  // Process valve commands (OPEN/CLOSE format per HA valve standard)
   if (srtTopic.equals(subscribeCommandTopic1))
   {
-    if (msgString == "1")
+    if (msgString == "OPEN" || msgString == "1")
     {
       stateMachine1 = s_Output1Start; // Set output one to be on
     }
-    else if (msgString == "0")
+    else if (msgString == "CLOSE" || msgString == "0")
     {
       stateMachine1 = s_Output1Stop; // Set output one to be off
     }
   }
   else if (srtTopic.equals(subscribeCommandTopic2))
   {
-    if (msgString == "1")
+    if (msgString == "OPEN" || msgString == "1")
     {
       stateMachine2 = s_Output2Start; // Set output two to be on
     }
-    else if (msgString == "0")
+    else if (msgString == "CLOSE" || msgString == "0")
     {
       stateMachine2 = s_Output2Stop; // Set output two to be off
     }
   }
   else if (srtTopic.equals(subscribeCommandTopic3))
   {
-    if (msgString == "1")
+    if (msgString == "OPEN" || msgString == "1")
     {
       stateMachine3 = s_Output3Start; // Set output three to be on
     }
-    else if (msgString == "0")
+    else if (msgString == "CLOSE" || msgString == "0")
     {
       stateMachine3 = s_Output3Stop; // Set output three to be off
     }
   }
   else if (srtTopic.equals(subscribeCommandTopic4))
   {
-    if (msgString == "1")
+    if (msgString == "OPEN" || msgString == "1")
     {
       stateMachine4 = s_Output4Start; // Set output four to be on
     }
-    else if (msgString == "0")
+    else if (msgString == "CLOSE" || msgString == "0")
     {
       stateMachine4 = s_Output4Stop; // Set output four to be off
+    }
+  }
+  // Handle watchdog duration command
+  else if (srtTopic.equals(watchdogCommandTopic))
+  {
+    int newDuration = msgString.toInt();
+    if (newDuration >= 0 && newDuration <= 120)
+    {
+      watchdogDurationMinutes = newDuration;
+      updateWatchdogDuration();
+      publishWatchdogState(); // Confirm the change
+    }
+    else
+    {
+      Serial.println("  Invalid watchdog duration: " + msgString + " (must be 0-120 minutes)");
     }
   }
 
@@ -565,6 +792,7 @@ void controlOutputOne(bool state)
     digitalWrite(DIGITAL_PIN_OUTPUT_ONE, LOW);
     outputOnePoweredStatus = false;
   }
+  publishValveState(1, outputOnePoweredStatus);
 }
 
 void controlOutputTwo(bool state)
@@ -583,6 +811,7 @@ void controlOutputTwo(bool state)
     digitalWrite(DIGITAL_PIN_OUTPUT_TWO, LOW);
     outputTwoPoweredStatus = false;
   }
+  publishValveState(2, outputTwoPoweredStatus);
 }
 
 void controlOutputThree(bool state)
@@ -601,6 +830,7 @@ void controlOutputThree(bool state)
     digitalWrite(DIGITAL_PIN_OUTPUT_THREE, LOW);
     outputThreePoweredStatus = false;
   }
+  publishValveState(3, outputThreePoweredStatus);
 }
 
 void controlOutputFour(bool state)
@@ -619,6 +849,7 @@ void controlOutputFour(bool state)
     digitalWrite(DIGITAL_PIN_OUTPUT_FOUR, LOW);
     outputFourPoweredStatus = false;
   }
+  publishValveState(4, outputFourPoweredStatus);
 }
 
 bool checkWatchdog()
@@ -856,7 +1087,6 @@ void customSetup()
   pinMode(DIGITAL_PIN_OUTPUT_TWO, OUTPUT);
   pinMode(DIGITAL_PIN_OUTPUT_THREE, OUTPUT);
   pinMode(DIGITAL_PIN_OUTPUT_FOUR, OUTPUT);
-  pinMode(ANALOGUE_PIN_ONE, INPUT);
 
   // Initialize pin start values
   digitalWrite(DIGITAL_PIN_OUTPUT_ONE, LOW);
