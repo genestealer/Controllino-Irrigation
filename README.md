@@ -1,5 +1,22 @@
 # Controllino-Irrigation
- Controllino Powered Irrigation Controller
+
+[![PlatformIO CI](https://github.com/genestealer/Controllino-Irrigation/actions/workflows/build.yml/badge.svg)](https://github.com/genestealer/Controllino-Irrigation/actions/workflows/build.yml)
+[![Release](https://github.com/genestealer/Controllino-Irrigation/actions/workflows/release.yml/badge.svg)](https://github.com/genestealer/Controllino-Irrigation/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/genestealer/Controllino-Irrigation)](LICENSE)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/genestealer/Controllino-Irrigation)](https://github.com/genestealer/Controllino-Irrigation/releases)
+[![PlatformIO](https://img.shields.io/badge/PlatformIO-Ready-blue)](https://platformio.org/)
+
+Controllino Powered Irrigation Controller
+
+## CI/CD and Automation
+
+The project includes GitHub Actions workflows for:
+
+- **Build Pipeline** - Automatically builds firmware for all environments on push/PR
+- **Release Pipeline** - Builds and attaches firmware binaries to GitHub releases
+- **Dependency Check** - Weekly checks for library updates
+
+Firmware artifacts are automatically built and available for download from the [Actions](https://github.com/genestealer/Controllino-Irrigation/actions) tab.
 
 ## Matching Home Assistant Home Automation Hub Configuration
 
@@ -70,20 +87,37 @@ Note: My code is based on my other ESP8266 based projects, so there are may be s
    - [Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output]( https://www.aliexpress.com/item/32620368747.html)
 
 
-  ### Edits made to the PlatformIO Project Configuration File:
-    platform = atmelavr
-    board = controllino_maxi
-    framework = arduino
-    lib_deps = PubSubClient, ArduinoJson, SPI, Ethernet, Controllino, I2CSoilMoistureSensor, Wire
-    monitor_speed = 115200
+### PlatformIO Configuration
 
-## Selecting the controller (Front vs Back) via PlatformIO
+The project uses PlatformIO with multiple build environments for different controller configurations:
 
-You can switch between the two garden controllers without editing code by using a build flag in `platformio.ini`:
+- **controllino_maxi** - Default environment (Back Garden)
+- **front_garden** - Front Garden controller (IRRIGATION_CONTROLLER=1)
+- **back_garden** - Back Garden controller (IRRIGATION_CONTROLLER=2)
 
-  [env:controllino_maxi]
-  ; 1 = Front Garden, 2 = Back Garden
-  build_flags = -DIRRIGATION_CONTROLLER=2
+#### Building for specific environments
 
-Override per-build by passing `--project-option "build_flags=-DIRRIGATION_CONTROLLER=1"` if needed.
+```bash
+# Build for default environment (Back Garden)
+pio run
+
+# Build for Front Garden
+pio run -e front_garden
+
+# Build for Back Garden
+pio run -e back_garden
+
+# Upload to Front Garden controller
+pio run -e front_garden -t upload
+
+# Monitor serial output
+pio device monitor
+```
+
+The `platformio.ini` follows current PlatformIO best practices with:
+- Global `[platformio]` section for project-level settings
+- `[common]` section for shared configuration (DRY principle)
+- Version-pinned library dependencies for reproducible builds
+- Multiple named environments for different deployment targets
+- Proper library identifiers (author/library@version)
 

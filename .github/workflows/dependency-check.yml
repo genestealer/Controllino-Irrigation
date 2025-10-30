@@ -1,0 +1,37 @@
+name: Dependency Check
+
+on:
+  schedule:
+    # Run weekly on Mondays at 9:00 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check-dependencies:
+    name: Check Library Dependencies
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio
+          
+      - name: Update library index
+        run: pio pkg update --global
+        
+      - name: Check for library updates
+        run: |
+          echo "Checking for library updates..."
+          pio pkg outdated -e controllino_maxi || true
+        
+      - name: List installed libraries
+        run: pio pkg list -e controllino_maxi
