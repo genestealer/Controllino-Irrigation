@@ -77,15 +77,15 @@ EthernetUDP ntpUDP;
 NTPClient timeClient(ntpUDP, ntp_server, 0, 86400000); // Update every 24 hours (86400000 ms)
 
 // Constants for reboot logic
-const unsigned long sevenDaysMillis = 7UL * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-unsigned long lastRebootCheckDate = 0; // Store the last date (epoch day) we checked for reboot
+unsigned long lastRebootCheckDate = 0; // Epoch day of the last reboot-eligibility check (set after NTP sync)
 const int rebootStartHour = 2; // Start of reboot window (2:00 AM)
 const int rebootEndHour = 4;   // End of reboot window (4:00 AM)
-unsigned long lastNtpUpdateDate = 0;  // Store the last date (epoch day) NTP was updated
+// ULONG_MAX forces an NTP update on the very first call to updateNTPTime()
+unsigned long lastNtpUpdateDate = ULONG_MAX;
 
 // MQTT Settings
 char message_buff[100];
-long lastReconnectAttempt = 0;                    // Reconnecting MQTT - non-blocking https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
+unsigned long lastReconnectAttempt = 0;           // Reconnecting MQTT - non-blocking https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
 const char *mqtt_server = secret_mqtt_server;     // E.G. 192.168.1.xx
 const char *clientName = secret_clientName;       // Client to report to MQTT
 const char *mqtt_username = secret_mqtt_username; // MQTT Username
@@ -93,7 +93,6 @@ const char *mqtt_password = secret_mqtt_password; // MQTT Password
 bool willRetain = true;                           // MQTT Last Will and Testament
 const char *willMessage = "offline";              // MQTT Last Will and Testament Message
 #define json_buffer_size (256)                    // Correct buffer overflow, ref https://github.com/knolleary/pubsubclient/commit/98ad16eff8848bffeb812c4d347dfdb5ddef5a31
-// const int json_buffer_size = 256;
 int noMqttConnectionCount = 0;
 const int noMqttConnectionCountLimit = 5;         // Maximum MQTT reconnection attempts before Ethernet reset
 // MQTT Subscribe
@@ -149,7 +148,7 @@ typedef enum
   s_Output1On = 2,    // state on
   s_Output1Stop = 3,  // state stop
 } e_state1;
-int stateMachine1 = 0;
+e_state1 stateMachine1 = s_idle1;
 
 typedef enum
 {
@@ -158,7 +157,7 @@ typedef enum
   s_Output2On = 2,    // state on
   s_Output2Stop = 3,  // state stop
 } e_state2;
-int stateMachine2 = 0;
+e_state2 stateMachine2 = s_idle2;
 
 typedef enum
 {
@@ -167,7 +166,7 @@ typedef enum
   s_Output3On = 2,    // state on
   s_Output3Stop = 3,  // state stop
 } e_state3;
-int stateMachine3 = 0;
+e_state3 stateMachine3 = s_idle3;
 
 typedef enum
 {
@@ -176,7 +175,7 @@ typedef enum
   s_Output4On = 2,    // state on
   s_Output4Stop = 3,  // state stop
 } e_state4;
-int stateMachine4 = 0;
+e_state4 stateMachine4 = s_idle4;
 
 typedef enum
 {
@@ -210,8 +209,6 @@ Also called if the MQTT connection fails after 5 re-tries.
 */
 bool setup_ethernet()
 {
-  // Serial.println("Inside setup_ethernet() function");
-  // Serial.println("Initialize Ethernet with DHCP:");
   if (Ethernet.begin(mac) == 0)
   {
     Serial.println("Failed to configure Ethernet using DHCP");
@@ -219,8 +216,6 @@ bool setup_ethernet()
     if (Ethernet.hardwareStatus() == EthernetNoHardware)
     {
       Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware.");
-      // while (true) {
-      //   delay(1); // do nothing, no point running without Ethernet hardware
       return false;
     }
   }
@@ -526,6 +521,7 @@ boolean mqttReconnect()
   Serial.println("Inside mqttReconnect() function");
 
   int retryCount = 0;
+  Serial.println("  Attempting MQTT connection...");
   // Retry up to 5 times if the MQTT connection fails
   while (!mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage) && retryCount < 5)
   {
@@ -541,7 +537,6 @@ boolean mqttReconnect()
   }
 
   // If successful, proceed with publishing and subscribing
-  Serial.println("  Attempting MQTT connection...");
   Serial.println("  Call publishNodeHealth() from mqttReconnect()");
 
   // Publish node state data
@@ -689,7 +684,7 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   Serial.println("**********************************************");
 
   Serial.println("Inside mqttcallback() function. Data received.");
-  digitalWrite(CONTROLLINO_D2, HIGH);
+  digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, HIGH);
 
   Serial.print("  Message arrived [");
   Serial.print(topic);
@@ -773,7 +768,7 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   }
 
   stateChanging = false; // Reset flag after state transition
-  digitalWrite(CONTROLLINO_D2, LOW);
+  digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW);
 
   Serial.println("  Completed mqttcallback() function");
   Serial.println("");
@@ -865,6 +860,11 @@ bool checkWatchdog()
   // If no outputs are on, reset timer ready for next activation
   if (!anyOutputOn()) {
     watchdogTimeStarted = millis(); // Ready for next valve activation
+    return false;
+  }
+
+  // A duration of 0 means the watchdog is disabled - never shut off by timeout
+  if (watchdogDurationMinutes == 0) {
     return false;
   }
 
@@ -1035,11 +1035,26 @@ void checkState4()
 }
 
 /*
-  Initialize the NTP client.
+  Initialize the NTP client and perform an immediate time sync.
+  Also initialises lastRebootCheckDate to today so the device does not
+  reboot immediately if it happens to boot on a scheduled-reboot day.
 */
 void setupNTP() {
   timeClient.begin();
-  Serial.println("NTP client initialized.");
+  // Force an immediate NTP sync so getEpochTime() returns a real value
+  // from the very first loop() iteration instead of 0.
+  if (timeClient.forceUpdate()) {
+    Serial.print("NTP initial sync. Current time: ");
+    Serial.println(timeClient.getFormattedTime());
+    // Record today so updateNTPTime() does not re-sync until tomorrow
+    // getEpochTime() returns seconds since Unix epoch; divide by 86400 (seconds/day) to get epoch day
+    lastNtpUpdateDate = timeClient.getEpochTime() / 86400UL;
+    // Pre-seed the reboot check to today so we do not reboot immediately
+    // if the current day happens to be a scheduled-reboot day.
+    lastRebootCheckDate = lastNtpUpdateDate;
+  } else {
+    Serial.println("NTP initial sync failed; will retry in loop.");
+  }
 }
 
 /*
@@ -1163,6 +1178,11 @@ void setup()
   digitalWrite(CONTROLLINO_D7, HIGH);
   delay(250);
 
+  // Setup for this project (output pins, NTP) before MQTT connects so
+  // relays are in a known safe state when the first MQTT messages arrive.
+  Serial.println("Start custom project setup..");
+  customSetup();
+
   // Set MQTT settings
   Serial.println("Setup MQTT..");
   mqttClient.setServer(mqtt_server, 1883);
@@ -1173,10 +1193,6 @@ void setup()
   // Set startup debug LED #3
   digitalWrite(CONTROLLINO_D8, HIGH);
   delay(250);
-
-  // Setup for this project.
-  Serial.println("Start custom project setup..");
-  customSetup();
 
   Serial.println("  Setup Complete");
   Serial.println("");

@@ -41,11 +41,6 @@
 #define secret_stateTopic4   "HOME/Irrigation1/OutputFour/State"
 
 #define secret_publishLastWillTopic       "HOME/Irrigation1/Status"
-#define secret_publishClientName          "HOME/Irrigation1/ClientName"
-#define secret_publishIpAddress           "HOME/Irrigation1/IpAddress"
-#define secret_publishSignalStrength      "HOME/Irrigation1/SignalStrength"
-#define secret_publishHostName            "HOME/Irrigation1/HostName"
-#define secret_publishSSID                "HOME/Irrigation1/SSID"
 
 #define secret_publishNodeStatusJsonTopic "HOME/Irrigation1/StatusJSON"
 #define secret_publishNodeHealthJsonTopic "HOME/Irrigation1/NodeHealthJSON"
@@ -73,24 +68,8 @@
 #define secret_stateTopic4   "HOME/Irrigation2/OutputFour/State"
 
 #define secret_publishLastWillTopic       "HOME/Irrigation2/Status"
-#define secret_publishClientName          "HOME/Irrigation2/ClientName"
-#define secret_publishIpAddress           "HOME/Irrigation2/IpAddress"
-#define secret_publishSignalStrength      "HOME/Irrigation2/SignalStrength"
-#define secret_publishHostName            "HOME/Irrigation2/HostName"
-#define secret_publishSSID                "HOME/Irrigation2/SSID"
 
 #define secret_publishNodeStatusJsonTopic "HOME/Irrigation2/StatusJSON"
 #define secret_publishNodeHealthJsonTopic "HOME/Irrigation2/NodeHealthJSON"
 
 #endif // IRRIGATION_CONTROLLER
-// Private.h - Example configuration file for secrets and settings
-// Replace the placeholder values with your actual credentials and settings.
-// Do NOT commit your real secrets to version control.
-
-#ifndef PRIVATE_H
-#define PRIVATE_H
-
-
-
-
-#endif // PRIVATE_H
