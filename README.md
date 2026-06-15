@@ -6,114 +6,167 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/genestealer/Controllino-Irrigation)](https://github.com/genestealer/Controllino-Irrigation/releases)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Ready-blue)](https://platformio.org/)
 
-Controllino Powered Irrigation Controller
+Ethernet-based irrigation controller running on a **Controllino Maxi** (ATmega 2560 + W5100).  
+Controls up to **four water solenoid valves** via relay outputs with full
+[Home Assistant](https://www.home-assistant.io/) integration through MQTT auto-discovery.
 
-## CI/CD and Automation
+---
 
-The project includes GitHub Actions workflows for:
+## Features
 
-- **Build Pipeline** - Automatically builds firmware for all environments on push/PR
-- **Release Pipeline** - Builds and attaches firmware binaries to GitHub releases
-- **Dependency Check** - Weekly checks for library updates
+- Controls 4 independent water valves via relay outputs
+- MQTT valve entities auto-discovered by Home Assistant (no manual HA configuration)
+- Per-valve `open`/`closed` state reporting retained on the broker
+- Configurable watchdog timer (0–120 min) prevents valves from running indefinitely; `0` disables the timeout
+- NTP time-sync with a scheduled 7-day maintenance reboot (2–4 AM window)
+- Non-blocking MQTT reconnect with automatic Ethernet/reboot fallback
+- Ethernet DHCP with periodic `Ethernet.maintain()` calls
 
-Firmware artifacts are automatically built and available for download from the [Actions](https://github.com/genestealer/Controllino-Irrigation/actions) tab.
+---
 
-## Matching Home Assistant Home Automation Hub Configuration
+## Hardware
 
-https://github.com/Genestealer/Home-Assistant-Configuration
+| Component | Details |
+|-----------|---------|
+| Controller | [Controllino Maxi](https://www.controllino.biz/product/controllino-maxi/) – ATmega 2560 + W5100 Ethernet |
+| Power | 12 V PoE Active Splitter (IEEE 802.3af) |
+| Valves | 12 V Electric Solenoid Valves |
+| Protection | Vishay 1N4001 flyback diodes on each valve |
 
-## Info
+### Relay outputs
 
-Richard Huish 2017-2020
-  
-Controllino Maxi Ethernet based with local home-assistant.io GUI, relay/digital output for dual irrigation control via MQTT.    
+| Screw terminal | Valve |
+|----------------|-------|
+| `DIGITAL_OUT_11` | Valve 1 |
+| `DIGITAL_OUT_10` | Valve 2 |
+| `DIGITAL_OUT_09` | Valve 3 |
+| `DIGITAL_OUT_08` | Valve 4 |
 
-MQTT command message with 'on' payload command one of the outputs on.
+> Relays can switch higher voltages or provide galvanic isolation if needed.
 
-MQTT command message with 'off' payload command one of the outputs off.
-    
-Note: My code is based on my other ESP8266 based projects, so there are may be some ESP nameing used.
+---
 
-### Based on ESP8266 variant: https://github.com/genestealer/Irrigation-Controller
- 
-## Screen shots of Home Assistant interface
-![Diagram](https://raw.githubusercontent.com/genestealer/Controllino-Irrigation/master/images/Home%20Assistant%20Webpage%20GUI%20Main.JPG)
+## Getting started
 
-![Diagram](https://raw.githubusercontent.com/genestealer/Controllino-Irrigation/master/images/Home%20Assistant%20Webpage%20GUI%20Setting.JPG) 
- 
-## Copy of code header (may be out of date, see code for latest)
-  GUI: Locally hosted home assistant on network https://www.home-assistant.io/
-  
-  MQTT: Locally hosted broker on network https://mosquitto.org/
-  
-  OTA updates: Not supported by default by the ATmega without flashing with custom bootloader and I have not done this.
- 
- ----------
-  
-  ### The circuit:
-   
-    Controllino Maxi - ATmega 2560-16AU with W5100 ethernet 
-  https://www.controllino.com/product/controllino-maxi/
-   
-    CONTROLLINO customized bootloaders https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library/tree/master/Bootloaders/MAXI
-    
-    W5100 ethernet (Built-In)
-    
-    12V PoE Active splitter Adapter, to power Controllino
-    
-    12V Electric Solenoid Valve for Water
-   
-    Flyback diode: Vishay 50V 1A, Diode, 2-Pin DO-204AL 1N4001-E3/54
- 
-### Outputs:
-   
-    CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10 (2 Amp output) - 1st water valve
-    
-    CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11 (2 Amp output) - 2nd water valve
-    
-    (Note: Use could use the relays to switch higher voltages or have galvanic isolation)
-    
-    Multiple on-board LEDS tos how MQTT connection, ethernet connection, status, etc    Notes:
-  
-  
-  ### Example Bill Of Materials:
-   
-   - [Controllino Maxi](https://www.controllino.com/product/controllino-maxi/)
-   - [1/2 Inch 12V Electric Solenoid Valve for Water](https://www.aliexpress.com/item/32951916193.html)
-   - [Active 12V PoE power over ethernet Splitter Adapter, IEEE 802.3af Compliant 10/100Mbps, 12V output]( https://www.aliexpress.com/item/32620368747.html)
+### 1 – Prerequisites
 
+- [PlatformIO](https://platformio.org/) (CLI or VS Code extension)
+- MQTT broker (e.g. [Mosquitto](https://mosquitto.org/)) on your local network
+- Home Assistant (optional, for GUI control)
 
-### PlatformIO Configuration
-
-The project uses PlatformIO with multiple build environments for different controller configurations:
-
-- **controllino_maxi** - Default environment (Back Garden)
-- **front_garden** - Front Garden controller (IRRIGATION_CONTROLLER=1)
-- **back_garden** - Back Garden controller (IRRIGATION_CONTROLLER=2)
-
-#### Building for specific environments
+### 2 – Create your private configuration
 
 ```bash
-# Build for default environment (Back Garden)
+cp include/Exampleprivate.h include/Private.h
+```
+
+Edit `include/Private.h` and fill in:
+
+- `secret_mqtt_server` – your MQTT broker IP/hostname
+- `secret_mqtt_username` / `secret_mqtt_password`
+- `secret_byte` – a unique MAC address for each controller
+- MQTT command and state topics for each valve
+- `ntp_server` – NTP server (default: `pool.ntp.org`)
+
+> `Private.h` is listed in `.gitignore` and will never be committed.
+
+### 3 – Select your target controller
+
+Two configurations are supported. Set `IRRIGATION_CONTROLLER` in `platformio.ini` (or use the named environments below):
+
+| Value | Description |
+|-------|-------------|
+| `1` | Front Garden |
+| `2` | Back Garden (default) |
+
+### 4 – Build and upload
+
+```bash
+# Build for Back Garden (default)
 pio run
 
 # Build for Front Garden
 pio run -e front_garden
 
-# Build for Back Garden
+# Build for Back Garden explicitly
 pio run -e back_garden
 
 # Upload to Front Garden controller
 pio run -e front_garden -t upload
 
-# Monitor serial output
+# Monitor serial output (115200 baud)
 pio device monitor
 ```
 
-The `platformio.ini` follows current PlatformIO best practices with:
+---
+
+## MQTT topics
+
+Valve command payloads follow the [Home Assistant valve](https://www.home-assistant.io/integrations/valve.mqtt/) standard:
+
+| Direction | Payload |
+|-----------|---------|
+| Open valve | `OPEN` |
+| Close valve | `CLOSE` |
+| Valve open state | `open` |
+| Valve closed state | `closed` |
+
+The watchdog duration (in minutes, range **0–120**) is also exposed as a Home Assistant `number` entity on topic `Home/Irrigation/Watchdog/Command`. Set to `0` to disable the watchdog timeout.
+
+---
+
+## CI/CD and Automation
+
+The project includes GitHub Actions workflows for:
+
+- **Build Pipeline** – Builds firmware for all three environments on every push/PR
+- **Release Pipeline** – Builds and attaches firmware binaries to GitHub releases
+- **Dependency Check** – Weekly scan for outdated library versions
+
+Firmware artifacts are available for download from the [Actions](https://github.com/genestealer/Controllino-Irrigation/actions) tab.
+
+---
+
+## Scheduled maintenance reboot
+
+The firmware reboots once every 7 days during the 2–4 AM window (UTC).  
+NTP is synced on boot via `pool.ntp.org` (configurable in `Private.h`).
+
+---
+
+## Matching Home Assistant configuration
+
+https://github.com/Genestealer/Home-Assistant-Configuration
+
+---
+
+## Screenshots
+
+![Home Assistant main view](https://raw.githubusercontent.com/genestealer/Controllino-Irrigation/master/images/Home%20Assistant%20Webpage%20GUI%20Main.JPG)
+
+![Home Assistant settings view](https://raw.githubusercontent.com/genestealer/Controllino-Irrigation/master/images/Home%20Assistant%20Webpage%20GUI%20Setting.JPG)
+
+---
+
+## Bill of Materials
+
+- [Controllino Maxi](https://www.controllino.com/product/controllino-maxi/)
+- [12 V Electric Solenoid Valve](https://www.aliexpress.com/item/32951916193.html)
+- [Active 12 V PoE Splitter – IEEE 802.3af, 10/100 Mbps](https://www.aliexpress.com/item/32620368747.html)
+
+---
+
+## PlatformIO configuration summary
+
+The `platformio.ini` follows PlatformIO best practices:
+
 - Global `[platformio]` section for project-level settings
-- `[common]` section for shared configuration (DRY principle)
+- `[common]` section for shared flags and dependencies (DRY principle)
 - Version-pinned library dependencies for reproducible builds
-- Multiple named environments for different deployment targets
-- Proper library identifiers (author/library@version)
+- Three named environments: `controllino_maxi`, `front_garden`, `back_garden`
+- Compiler warnings enabled (`-Wall -Wextra`)
+
+---
+
+*Based on the earlier ESP8266 variant: <https://github.com/genestealer/Irrigation-Controller>*
 

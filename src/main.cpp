@@ -52,16 +52,17 @@
 
 // Note: Libraries are included in "Project Dependencies" file platformio.ini
 // Use correct case to avoid build issues on case-sensitive filesystems
-#include "Private.h"               // Passwords etc. not for GitHub
-#include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-#include <ArduinoJson.h>           // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
-#include <Arduino.h>               // Core Arduino library https://github.com/arduino/Arduino
-#include <Controllino.h>           // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
-#include <SPI.h>                   // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
-#include <Ethernet.h>              // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
-#include <avr/wdt.h>               // Watchdog timer library
+#include "Private.h"      // Passwords etc. not for GitHub
+#include <PubSubClient.h> // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
+#include <ArduinoJson.h>  // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
+#include <Arduino.h>      // Core Arduino library https://github.com/arduino/Arduino
+#include <limits.h>       // For ULONG_MAX constant
+#include <Controllino.h>  // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
+#include <SPI.h>          // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
+#include <Ethernet.h>     // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
+#include <avr/wdt.h>      // Watchdog timer library
 #include <NTPClient.h>
-#include <EthernetUdp.h>           // Use EthernetUdp for NTP communication
+#include <EthernetUdp.h> // Use EthernetUdp for NTP communication
 
 // Ethernet parameters
 byte mac[] = secret_byte;
@@ -77,15 +78,15 @@ EthernetUDP ntpUDP;
 NTPClient timeClient(ntpUDP, ntp_server, 0, 86400000); // Update every 24 hours (86400000 ms)
 
 // Constants for reboot logic
-const unsigned long sevenDaysMillis = 7UL * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-unsigned long lastRebootCheckDate = 0; // Store the last date (epoch day) we checked for reboot
-const int rebootStartHour = 2; // Start of reboot window (2:00 AM)
-const int rebootEndHour = 4;   // End of reboot window (4:00 AM)
-unsigned long lastNtpUpdateDate = 0;  // Store the last date (epoch day) NTP was updated
+unsigned long lastRebootCheckDate = 0; // Epoch day of the last reboot-eligibility check (set after NTP sync)
+const int rebootStartHour = 2;         // Start of reboot window (2:00 AM)
+const int rebootEndHour = 4;           // End of reboot window (4:00 AM)
+// ULONG_MAX forces an NTP update on the very first call to updateNTPTime()
+unsigned long lastNtpUpdateDate = ULONG_MAX;
 
 // MQTT Settings
 char message_buff[100];
-long lastReconnectAttempt = 0;                    // Reconnecting MQTT - non-blocking https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
+unsigned long lastReconnectAttempt = 0;           // Reconnecting MQTT - non-blocking https://github.com/knolleary/pubsubclient/blob/master/examples/mqtt_reconnect_nonblocking/mqtt_reconnect_nonblocking.ino
 const char *mqtt_server = secret_mqtt_server;     // E.G. 192.168.1.xx
 const char *clientName = secret_clientName;       // Client to report to MQTT
 const char *mqtt_username = secret_mqtt_username; // MQTT Username
@@ -93,22 +94,26 @@ const char *mqtt_password = secret_mqtt_password; // MQTT Password
 bool willRetain = true;                           // MQTT Last Will and Testament
 const char *willMessage = "offline";              // MQTT Last Will and Testament Message
 #define json_buffer_size (256)                    // Correct buffer overflow, ref https://github.com/knolleary/pubsubclient/commit/98ad16eff8848bffeb812c4d347dfdb5ddef5a31
-// const int json_buffer_size = 256;
 int noMqttConnectionCount = 0;
-const int noMqttConnectionCountLimit = 5;         // Maximum MQTT reconnection attempts before Ethernet reset
+const int noMqttConnectionCountLimit = 5; // Maximum MQTT reconnection attempts before Ethernet reset
 // MQTT Subscribe
 const char *subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
 const char *subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
 const char *subscribeCommandTopic3 = secret_commandTopic3; // E.G. Home/Irrigation/Command3
 const char *subscribeCommandTopic4 = secret_commandTopic4; // E.G. Home/Irrigation/Command4
 // MQTT State publish topics (for HA discovery switch state)
-const char *stateTopic1 = secret_stateTopic1;   // E.G. Home/Irrigation/State1
-const char *stateTopic2 = secret_stateTopic2;   // E.G. Home/Irrigation/State2
-const char *stateTopic3 = secret_stateTopic3;   // E.G. Home/Irrigation/State3
-const char *stateTopic4 = secret_stateTopic4;   // E.G. Home/Irrigation/State4
+const char *stateTopic1 = secret_stateTopic1; // E.G. Home/Irrigation/State1
+const char *stateTopic2 = secret_stateTopic2; // E.G. Home/Irrigation/State2
+const char *stateTopic3 = secret_stateTopic3; // E.G. Home/Irrigation/State3
+const char *stateTopic4 = secret_stateTopic4; // E.G. Home/Irrigation/State4
+// Friendly names shown in Home Assistant for each valve
+const char *valveName1 = secret_valveName1;
+const char *valveName2 = secret_valveName2;
+const char *valveName3 = secret_valveName3;
+const char *valveName4 = secret_valveName4;
 // MQTT Watchdog duration control
-const char *watchdogCommandTopic = "Home/Irrigation/Watchdog/Command";      // Command topic for watchdog duration (in minutes)
-const char *watchdogStateTopic = "Home/Irrigation/Watchdog/State";          // State topic for watchdog duration (in minutes)
+const char *watchdogCommandTopic = "Home/Irrigation/Watchdog/Command"; // Command topic for watchdog duration (in minutes)
+const char *watchdogStateTopic = "Home/Irrigation/Watchdog/State";     // State topic for watchdog duration (in minutes)
 // MQTT Publish
 const char *publishLastWillTopic = secret_publishLastWillTopic;             // MQTT last will
 const char *publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic; // State of the node
@@ -149,7 +154,7 @@ typedef enum
   s_Output1On = 2,    // state on
   s_Output1Stop = 3,  // state stop
 } e_state1;
-int stateMachine1 = 0;
+e_state1 stateMachine1 = s_idle1;
 
 typedef enum
 {
@@ -158,7 +163,7 @@ typedef enum
   s_Output2On = 2,    // state on
   s_Output2Stop = 3,  // state stop
 } e_state2;
-int stateMachine2 = 0;
+e_state2 stateMachine2 = s_idle2;
 
 typedef enum
 {
@@ -167,7 +172,7 @@ typedef enum
   s_Output3On = 2,    // state on
   s_Output3Stop = 3,  // state stop
 } e_state3;
-int stateMachine3 = 0;
+e_state3 stateMachine3 = s_idle3;
 
 typedef enum
 {
@@ -176,7 +181,7 @@ typedef enum
   s_Output4On = 2,    // state on
   s_Output4Stop = 3,  // state stop
 } e_state4;
-int stateMachine4 = 0;
+e_state4 stateMachine4 = s_idle4;
 
 typedef enum
 {
@@ -210,8 +215,6 @@ Also called if the MQTT connection fails after 5 re-tries.
 */
 bool setup_ethernet()
 {
-  // Serial.println("Inside setup_ethernet() function");
-  // Serial.println("Initialize Ethernet with DHCP:");
   if (Ethernet.begin(mac) == 0)
   {
     Serial.println("Failed to configure Ethernet using DHCP");
@@ -219,8 +222,6 @@ bool setup_ethernet()
     if (Ethernet.hardwareStatus() == EthernetNoHardware)
     {
       Serial.println("Ethernet shield was not found.  Sorry, can't run without hardware.");
-      // while (true) {
-      //   delay(1); // do nothing, no point running without Ethernet hardware
       return false;
     }
   }
@@ -377,32 +378,26 @@ void publishHADiscovery()
     String topic = String(haDiscoveryPrefix) + "/valve/" + nodeId + "/valve" + String(i) + "/config";
 
     StaticJsonDocument<512> cfg;
-    // Friendly name - set to null to inherit device name
-    cfg["name"] = String("Valve ") + String(i);
+    // Friendly name and topics per valve
+    const char *cmdTopic = nullptr;
+    const char *stTopic  = nullptr;
+    const char *vName    = nullptr;
+    switch (i)
+    {
+    case 1: cmdTopic = subscribeCommandTopic1; stTopic = stateTopic1; vName = valveName1; break;
+    case 2: cmdTopic = subscribeCommandTopic2; stTopic = stateTopic2; vName = valveName2; break;
+    case 3: cmdTopic = subscribeCommandTopic3; stTopic = stateTopic3; vName = valveName3; break;
+    case 4: cmdTopic = subscribeCommandTopic4; stTopic = stateTopic4; vName = valveName4; break;
+    default: continue; // skip any unexpected index
+    }
+    cfg["name"] = vName;
     // Unique id
     cfg["unique_id"] = String(nodeId) + String("_valve") + String(i);
     // Device class for water valves
     cfg["device_class"] = "water";
     // Topics
-    switch (i)
-    {
-    case 1:
-      cfg["cmd_t"] = subscribeCommandTopic1;
-      cfg["stat_t"] = stateTopic1;
-      break;
-    case 2:
-      cfg["cmd_t"] = subscribeCommandTopic2;
-      cfg["stat_t"] = stateTopic2;
-      break;
-    case 3:
-      cfg["cmd_t"] = subscribeCommandTopic3;
-      cfg["stat_t"] = stateTopic3;
-      break;
-    case 4:
-      cfg["cmd_t"] = subscribeCommandTopic4;
-      cfg["stat_t"] = stateTopic4;
-      break;
-    }
+    cfg["cmd_t"] = cmdTopic;
+    cfg["stat_t"] = stTopic;
     // Valve command payloads (OPEN/CLOSE are HA defaults)
     cfg["pl_open"] = "OPEN";
     cfg["pl_cls"] = "CLOSE";
@@ -433,7 +428,7 @@ void publishHADiscovery()
     origin["sw"] = "2024.1.0";
     origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
 
-    char payload[512];
+    char payload[768];
     size_t n = serializeJson(cfg, payload, sizeof(payload));
     if (n == 0 || n >= sizeof(payload))
     {
@@ -486,7 +481,7 @@ void publishHADiscovery()
     origin["sw"] = "2024.1.0";
     origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
 
-    char payload[512];
+    char payload[768];
     size_t n = serializeJson(cfg, payload, sizeof(payload));
     if (n == 0 || n >= sizeof(payload))
     {
@@ -526,6 +521,7 @@ boolean mqttReconnect()
   Serial.println("Inside mqttReconnect() function");
 
   int retryCount = 0;
+  Serial.println("  Attempting MQTT connection...");
   // Retry up to 5 times if the MQTT connection fails
   while (!mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage) && retryCount < 5)
   {
@@ -541,7 +537,6 @@ boolean mqttReconnect()
   }
 
   // If successful, proceed with publishing and subscribing
-  Serial.println("  Attempting MQTT connection...");
   Serial.println("  Call publishNodeHealth() from mqttReconnect()");
 
   // Publish node state data
@@ -689,7 +684,7 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   Serial.println("**********************************************");
 
   Serial.println("Inside mqttcallback() function. Data received.");
-  digitalWrite(CONTROLLINO_D2, HIGH);
+  digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, HIGH);
 
   Serial.print("  Message arrived [");
   Serial.print(topic);
@@ -699,9 +694,10 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   unsigned int copyLen = length < sizeof(message_buff) - 1 ? length : sizeof(message_buff) - 1;
   memcpy(message_buff, payload, copyLen);
   message_buff[copyLen] = '\0'; // Ensure null-termination
-  
+
   // Warn if payload was truncated
-  if (length >= sizeof(message_buff)) {
+  if (length >= sizeof(message_buff))
+  {
     Serial.println("  WARNING: Payload truncated from " + String(length) + " to " + String(copyLen) + " bytes");
   }
 
@@ -773,7 +769,7 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   }
 
   stateChanging = false; // Reset flag after state transition
-  digitalWrite(CONTROLLINO_D2, LOW);
+  digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW);
 
   Serial.println("  Completed mqttcallback() function");
   Serial.println("");
@@ -858,18 +854,27 @@ void controlOutputFour(bool state)
 bool checkWatchdog()
 {
   // Helper lambda to know if any output is currently on
-  auto anyOutputOn = []() {
+  auto anyOutputOn = []()
+  {
     return outputOnePoweredStatus || outputTwoPoweredStatus || outputThreePoweredStatus || outputFourPoweredStatus;
   };
 
   // If no outputs are on, reset timer ready for next activation
-  if (!anyOutputOn()) {
+  if (!anyOutputOn())
+  {
     watchdogTimeStarted = millis(); // Ready for next valve activation
     return false;
   }
 
+  // A duration of 0 means the watchdog is disabled - never shut off by timeout
+  if (watchdogDurationMinutes == 0)
+  {
+    return false;
+  }
+
   // When outputs are on, check duration
-  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis) {
+  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis)
+  {
     Serial.println("checkWatchdog: duration exceeded, shutting down all valves");
     return true;
   }
@@ -1035,23 +1040,44 @@ void checkState4()
 }
 
 /*
-  Initialize the NTP client.
+  Initialize the NTP client and perform an immediate time sync.
+  Also initialises lastRebootCheckDate to today so the device does not
+  reboot immediately if it happens to boot on a scheduled-reboot day.
 */
-void setupNTP() {
+void setupNTP()
+{
   timeClient.begin();
-  Serial.println("NTP client initialized.");
+  // Force an immediate NTP sync so getEpochTime() returns a real value
+  // from the very first loop() iteration instead of 0.
+  if (timeClient.forceUpdate())
+  {
+    Serial.print("NTP initial sync. Current time: ");
+    Serial.println(timeClient.getFormattedTime());
+    // Record today so updateNTPTime() does not re-sync until tomorrow
+    // getEpochTime() returns seconds since Unix epoch; divide by 86400 (seconds/day) to get epoch day
+    lastNtpUpdateDate = timeClient.getEpochTime() / 86400UL;
+    // Pre-seed the reboot check to today so we do not reboot immediately
+    // if the current day happens to be a scheduled-reboot day.
+    lastRebootCheckDate = lastNtpUpdateDate;
+  }
+  else
+  {
+    Serial.println("NTP initial sync failed; will retry in loop.");
+  }
 }
 
 /*
   Update the NTP time once a day.
   Uses date comparison instead of hour-based flag to avoid missing midnight.
 */
-void updateNTPTime() {
+void updateNTPTime()
+{
   // Get current date as epoch day (days since 1970-01-01)
   unsigned long currentEpochDay = timeClient.getEpochTime() / 86400UL;
-  
+
   // Update NTP if we haven't updated today
-  if (currentEpochDay != lastNtpUpdateDate) {
+  if (currentEpochDay != lastNtpUpdateDate)
+  {
     timeClient.update();
     lastNtpUpdateDate = currentEpochDay;
     Serial.print("NTP updated. Current time: ");
@@ -1063,23 +1089,27 @@ void updateNTPTime() {
   Check if the system should reboot (every 7 days during night hours 2-4 AM).
   Uses NTP date tracking to avoid millis() overflow issues.
 */
-void checkRebootCondition() {
+void checkRebootCondition()
+{
   // Get current date as epoch day (days since 1970-01-01)
   unsigned long currentEpochDay = timeClient.getEpochTime() / 86400UL;
-  
+
   // Check if we've crossed into a new reboot eligibility period (every 7 days)
   // Only check once per day to avoid multiple reboot attempts
-  if (currentEpochDay != lastRebootCheckDate) {
+  if (currentEpochDay != lastRebootCheckDate)
+  {
     lastRebootCheckDate = currentEpochDay;
-    
+
     // Check if we've reached 7-day interval (simplified: check if day is divisible by 7)
     // For production, you might track actual boot date, but this provides periodic reboots
-    if ((currentEpochDay % 7) == 0) {
+    if ((currentEpochDay % 7) == 0)
+    {
       timeClient.update(); // Ensure we have the latest time
       int currentHour = timeClient.getHours();
-      
+
       // Check if the current time is within the reboot window (2-4 AM)
-      if (currentHour >= rebootStartHour && currentHour < rebootEndHour) {
+      if (currentHour >= rebootStartHour && currentHour < rebootEndHour)
+      {
         Serial.println("Scheduled reboot: 7-day maintenance window reached");
         rebootArduino(); // Call the reboot function
       }
@@ -1163,6 +1193,11 @@ void setup()
   digitalWrite(CONTROLLINO_D7, HIGH);
   delay(250);
 
+  // Setup for this project (output pins, NTP) before MQTT connects so
+  // relays are in a known safe state when the first MQTT messages arrive.
+  Serial.println("Start custom project setup..");
+  customSetup();
+
   // Set MQTT settings
   Serial.println("Setup MQTT..");
   mqttClient.setServer(mqtt_server, 1883);
@@ -1174,10 +1209,6 @@ void setup()
   digitalWrite(CONTROLLINO_D8, HIGH);
   delay(250);
 
-  // Setup for this project.
-  Serial.println("Start custom project setup..");
-  customSetup();
-
   Serial.println("  Setup Complete");
   Serial.println("");
   Serial.println("");
@@ -1188,7 +1219,8 @@ void loop()
 {
   // Check ethernet connection periodically for DHCP maintenance
   static unsigned long lastEthernetCheck = 0;
-  if (millis() - lastEthernetCheck >= 60000) { // Check every 60 seconds
+  if (millis() - lastEthernetCheck >= 60000)
+  { // Check every 60 seconds
     checkEthernetConnection();
     lastEthernetCheck = millis();
   }
