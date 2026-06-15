@@ -428,7 +428,7 @@ void publishHADiscovery()
     origin["sw"] = "2024.1.0";
     origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
 
-    char payload[512];
+    char payload[768];
     size_t n = serializeJson(cfg, payload, sizeof(payload));
     if (n == 0 || n >= sizeof(payload))
     {
@@ -481,7 +481,7 @@ void publishHADiscovery()
     origin["sw"] = "2024.1.0";
     origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
 
-    char payload[512];
+    char payload[768];
     size_t n = serializeJson(cfg, payload, sizeof(payload));
     if (n == 0 || n >= sizeof(payload))
     {
