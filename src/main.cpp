@@ -91,9 +91,17 @@ const char *mqtt_server = secret_mqtt_server;     // E.G. 192.168.1.xx
 const char *clientName = secret_clientName;       // Client to report to MQTT
 const char *mqtt_username = secret_mqtt_username; // MQTT Username
 const char *mqtt_password = secret_mqtt_password; // MQTT Password
-bool willRetain = true;                           // MQTT Last Will and Testament
-const char *willMessage = "offline";              // MQTT Last Will and Testament Message
-#define json_buffer_size (256)                    // Correct buffer overflow, ref https://github.com/knolleary/pubsubclient/commit/98ad16eff8848bffeb812c4d347dfdb5ddef5a31
+
+// Optional Home Assistant discovery device name (defaults to MQTT client name)
+#ifdef secret_ha_deviceName
+const char *haDeviceName = secret_ha_deviceName;
+#else
+const char *haDeviceName = secret_clientName;
+#endif
+
+bool willRetain = true;              // MQTT Last Will and Testament
+const char *willMessage = "offline"; // MQTT Last Will and Testament Message
+#define json_buffer_size (256)       // Correct buffer overflow, ref https://github.com/knolleary/pubsubclient/commit/98ad16eff8848bffeb812c4d347dfdb5ddef5a31
 int noMqttConnectionCount = 0;
 const int noMqttConnectionCountLimit = 5; // Maximum MQTT reconnection attempts before Ethernet reset
 // MQTT Subscribe
@@ -380,15 +388,32 @@ void publishHADiscovery()
     StaticJsonDocument<512> cfg;
     // Friendly name and topics per valve
     const char *cmdTopic = nullptr;
-    const char *stTopic  = nullptr;
-    const char *vName    = nullptr;
+    const char *stTopic = nullptr;
+    const char *vName = nullptr;
     switch (i)
     {
-    case 1: cmdTopic = subscribeCommandTopic1; stTopic = stateTopic1; vName = valveName1; break;
-    case 2: cmdTopic = subscribeCommandTopic2; stTopic = stateTopic2; vName = valveName2; break;
-    case 3: cmdTopic = subscribeCommandTopic3; stTopic = stateTopic3; vName = valveName3; break;
-    case 4: cmdTopic = subscribeCommandTopic4; stTopic = stateTopic4; vName = valveName4; break;
-    default: continue; // skip any unexpected index
+    case 1:
+      cmdTopic = subscribeCommandTopic1;
+      stTopic = stateTopic1;
+      vName = valveName1;
+      break;
+    case 2:
+      cmdTopic = subscribeCommandTopic2;
+      stTopic = stateTopic2;
+      vName = valveName2;
+      break;
+    case 3:
+      cmdTopic = subscribeCommandTopic3;
+      stTopic = stateTopic3;
+      vName = valveName3;
+      break;
+    case 4:
+      cmdTopic = subscribeCommandTopic4;
+      stTopic = stateTopic4;
+      vName = valveName4;
+      break;
+    default:
+      continue; // skip any unexpected index
     }
     cfg["name"] = vName;
     // Unique id
@@ -417,7 +442,7 @@ void publishHADiscovery()
     JsonObject dev = cfg.createNestedObject("device");
     JsonArray idArr = dev.createNestedArray("identifiers");
     idArr.add(nodeId);
-    dev["name"] = nodeId;
+    dev["name"] = haDeviceName;
     dev["model"] = "Controllino Maxi";
     dev["manufacturer"] = "Controllino";
     dev["sw_version"] = "2024.1.0";
@@ -470,15 +495,15 @@ void publishHADiscovery()
     JsonObject dev = cfg.createNestedObject("device");
     JsonArray idArr = dev.createNestedArray("identifiers");
     idArr.add(nodeId);
-    dev["name"] = nodeId;
+    dev["name"] = haDeviceName;
     dev["model"] = "Controllino Maxi";
     dev["manufacturer"] = "Controllino";
-    dev["sw_version"] = "2024.1.0";
+    dev["sw_version"] = "2026.6.15";
 
     // Origin info
     JsonObject origin = cfg.createNestedObject("o");
     origin["name"] = "Controllino-Irrigation";
-    origin["sw"] = "2024.1.0";
+    origin["sw"] = "2026.6.15";
     origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
 
     char payload[768];
