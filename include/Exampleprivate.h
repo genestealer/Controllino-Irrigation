@@ -30,15 +30,19 @@
 
 #define secret_commandTopic1 "HOME/Irrigation1/OutputOne/Command"
 #define secret_stateTopic1   "HOME/Irrigation1/OutputOne/State"
+#define secret_valveName1    "Front Valve 1"
 
 #define secret_commandTopic2 "HOME/Irrigation1/OutputTwo/Command"
 #define secret_stateTopic2   "HOME/Irrigation1/OutputTwo/State"
+#define secret_valveName2    "Front Valve 2"
 
 #define secret_commandTopic3 "HOME/Irrigation1/OutputThree/Command"
 #define secret_stateTopic3   "HOME/Irrigation1/OutputThree/State"
+#define secret_valveName3    "Front Valve 3"
 
 #define secret_commandTopic4 "HOME/Irrigation1/OutputFour/Command"
 #define secret_stateTopic4   "HOME/Irrigation1/OutputFour/State"
+#define secret_valveName4    "Front Valve 4"
 
 #define secret_publishLastWillTopic       "HOME/Irrigation1/Status"
 
@@ -57,15 +61,19 @@
 
 #define secret_commandTopic1 "HOME/Irrigation2/OutputOne/Command"
 #define secret_stateTopic1   "HOME/Irrigation2/OutputOne/State"
+#define secret_valveName1    "Back Valve 1"
 
 #define secret_commandTopic2 "HOME/Irrigation2/OutputTwo/Command"
 #define secret_stateTopic2   "HOME/Irrigation2/OutputTwo/State"
+#define secret_valveName2    "Back Valve 2"
 
 #define secret_commandTopic3 "HOME/Irrigation2/OutputThree/Command"
 #define secret_stateTopic3   "HOME/Irrigation2/OutputThree/State"
+#define secret_valveName3    "Back Valve 3"
 
 #define secret_commandTopic4 "HOME/Irrigation2/OutputFour/Command"
 #define secret_stateTopic4   "HOME/Irrigation2/OutputFour/State"
+#define secret_valveName4    "Back Valve 4"
 
 #define secret_publishLastWillTopic       "HOME/Irrigation2/Status"
 

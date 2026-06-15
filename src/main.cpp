@@ -106,6 +106,11 @@ const char *stateTopic1 = secret_stateTopic1; // E.G. Home/Irrigation/State1
 const char *stateTopic2 = secret_stateTopic2; // E.G. Home/Irrigation/State2
 const char *stateTopic3 = secret_stateTopic3; // E.G. Home/Irrigation/State3
 const char *stateTopic4 = secret_stateTopic4; // E.G. Home/Irrigation/State4
+// Friendly names shown in Home Assistant for each valve
+const char *valveName1 = secret_valveName1;
+const char *valveName2 = secret_valveName2;
+const char *valveName3 = secret_valveName3;
+const char *valveName4 = secret_valveName4;
 // MQTT Watchdog duration control
 const char *watchdogCommandTopic = "Home/Irrigation/Watchdog/Command"; // Command topic for watchdog duration (in minutes)
 const char *watchdogStateTopic = "Home/Irrigation/Watchdog/State";     // State topic for watchdog duration (in minutes)
@@ -373,32 +378,25 @@ void publishHADiscovery()
     String topic = String(haDiscoveryPrefix) + "/valve/" + nodeId + "/valve" + String(i) + "/config";
 
     StaticJsonDocument<512> cfg;
-    // Friendly name - set to null to inherit device name
-    cfg["name"] = String("Valve ") + String(i);
+    // Friendly name and topics per valve
+    const char *cmdTopic = nullptr;
+    const char *stTopic  = nullptr;
+    const char *vName    = nullptr;
+    switch (i)
+    {
+    case 1: cmdTopic = subscribeCommandTopic1; stTopic = stateTopic1; vName = valveName1; break;
+    case 2: cmdTopic = subscribeCommandTopic2; stTopic = stateTopic2; vName = valveName2; break;
+    case 3: cmdTopic = subscribeCommandTopic3; stTopic = stateTopic3; vName = valveName3; break;
+    case 4: cmdTopic = subscribeCommandTopic4; stTopic = stateTopic4; vName = valveName4; break;
+    }
+    cfg["name"] = vName;
     // Unique id
     cfg["unique_id"] = String(nodeId) + String("_valve") + String(i);
     // Device class for water valves
     cfg["device_class"] = "water";
     // Topics
-    switch (i)
-    {
-    case 1:
-      cfg["cmd_t"] = subscribeCommandTopic1;
-      cfg["stat_t"] = stateTopic1;
-      break;
-    case 2:
-      cfg["cmd_t"] = subscribeCommandTopic2;
-      cfg["stat_t"] = stateTopic2;
-      break;
-    case 3:
-      cfg["cmd_t"] = subscribeCommandTopic3;
-      cfg["stat_t"] = stateTopic3;
-      break;
-    case 4:
-      cfg["cmd_t"] = subscribeCommandTopic4;
-      cfg["stat_t"] = stateTopic4;
-      break;
-    }
+    cfg["cmd_t"] = cmdTopic;
+    cfg["stat_t"] = stTopic;
     // Valve command payloads (OPEN/CLOSE are HA defaults)
     cfg["pl_open"] = "OPEN";
     cfg["pl_cls"] = "CLOSE";
