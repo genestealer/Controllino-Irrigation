@@ -388,6 +388,7 @@ void publishHADiscovery()
     case 2: cmdTopic = subscribeCommandTopic2; stTopic = stateTopic2; vName = valveName2; break;
     case 3: cmdTopic = subscribeCommandTopic3; stTopic = stateTopic3; vName = valveName3; break;
     case 4: cmdTopic = subscribeCommandTopic4; stTopic = stateTopic4; vName = valveName4; break;
+    default: continue; // skip any unexpected index
     }
     cfg["name"] = vName;
     // Unique id
