@@ -52,16 +52,17 @@
 
 // Note: Libraries are included in "Project Dependencies" file platformio.ini
 // Use correct case to avoid build issues on case-sensitive filesystems
-#include "Private.h"               // Passwords etc. not for GitHub
-#include <PubSubClient.h>          // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
-#include <ArduinoJson.h>           // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
-#include <Arduino.h>               // Core Arduino library https://github.com/arduino/Arduino
-#include <Controllino.h>           // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
-#include <SPI.h>                   // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
-#include <Ethernet.h>              // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
-#include <avr/wdt.h>               // Watchdog timer library
+#include "Private.h"      // Passwords etc. not for GitHub
+#include <PubSubClient.h> // Arduino Client for MQTT https://github.com/knolleary/pubsubclient
+#include <ArduinoJson.h>  // Updated ArduinoJson to Version 6. For sending MQTT JSON messages https://bblanchon.github.io/ArduinoJson/
+#include <Arduino.h>      // Core Arduino library https://github.com/arduino/Arduino
+#include <limits.h>       // For ULONG_MAX constant
+#include <Controllino.h>  // Core Arduino Controllino library https://github.com/CONTROLLINO-PLC/CONTROLLINO_Library
+#include <SPI.h>          // Arduino Serial Peripheral Interface - for Ethernet connection https://www.arduino.cc/en/reference/SPI
+#include <Ethernet.h>     // Arduino Ethernet https://www.arduino.cc/en/reference/Ethernet
+#include <avr/wdt.h>      // Watchdog timer library
 #include <NTPClient.h>
-#include <EthernetUdp.h>           // Use EthernetUdp for NTP communication
+#include <EthernetUdp.h> // Use EthernetUdp for NTP communication
 
 // Ethernet parameters
 byte mac[] = secret_byte;
@@ -78,8 +79,8 @@ NTPClient timeClient(ntpUDP, ntp_server, 0, 86400000); // Update every 24 hours 
 
 // Constants for reboot logic
 unsigned long lastRebootCheckDate = 0; // Epoch day of the last reboot-eligibility check (set after NTP sync)
-const int rebootStartHour = 2; // Start of reboot window (2:00 AM)
-const int rebootEndHour = 4;   // End of reboot window (4:00 AM)
+const int rebootStartHour = 2;         // Start of reboot window (2:00 AM)
+const int rebootEndHour = 4;           // End of reboot window (4:00 AM)
 // ULONG_MAX forces an NTP update on the very first call to updateNTPTime()
 unsigned long lastNtpUpdateDate = ULONG_MAX;
 
@@ -94,20 +95,20 @@ bool willRetain = true;                           // MQTT Last Will and Testamen
 const char *willMessage = "offline";              // MQTT Last Will and Testament Message
 #define json_buffer_size (256)                    // Correct buffer overflow, ref https://github.com/knolleary/pubsubclient/commit/98ad16eff8848bffeb812c4d347dfdb5ddef5a31
 int noMqttConnectionCount = 0;
-const int noMqttConnectionCountLimit = 5;         // Maximum MQTT reconnection attempts before Ethernet reset
+const int noMqttConnectionCountLimit = 5; // Maximum MQTT reconnection attempts before Ethernet reset
 // MQTT Subscribe
 const char *subscribeCommandTopic1 = secret_commandTopic1; // E.G. Home/Irrigation/Command1
 const char *subscribeCommandTopic2 = secret_commandTopic2; // E.G. Home/Irrigation/Command2
 const char *subscribeCommandTopic3 = secret_commandTopic3; // E.G. Home/Irrigation/Command3
 const char *subscribeCommandTopic4 = secret_commandTopic4; // E.G. Home/Irrigation/Command4
 // MQTT State publish topics (for HA discovery switch state)
-const char *stateTopic1 = secret_stateTopic1;   // E.G. Home/Irrigation/State1
-const char *stateTopic2 = secret_stateTopic2;   // E.G. Home/Irrigation/State2
-const char *stateTopic3 = secret_stateTopic3;   // E.G. Home/Irrigation/State3
-const char *stateTopic4 = secret_stateTopic4;   // E.G. Home/Irrigation/State4
+const char *stateTopic1 = secret_stateTopic1; // E.G. Home/Irrigation/State1
+const char *stateTopic2 = secret_stateTopic2; // E.G. Home/Irrigation/State2
+const char *stateTopic3 = secret_stateTopic3; // E.G. Home/Irrigation/State3
+const char *stateTopic4 = secret_stateTopic4; // E.G. Home/Irrigation/State4
 // MQTT Watchdog duration control
-const char *watchdogCommandTopic = "Home/Irrigation/Watchdog/Command";      // Command topic for watchdog duration (in minutes)
-const char *watchdogStateTopic = "Home/Irrigation/Watchdog/State";          // State topic for watchdog duration (in minutes)
+const char *watchdogCommandTopic = "Home/Irrigation/Watchdog/Command"; // Command topic for watchdog duration (in minutes)
+const char *watchdogStateTopic = "Home/Irrigation/Watchdog/State";     // State topic for watchdog duration (in minutes)
 // MQTT Publish
 const char *publishLastWillTopic = secret_publishLastWillTopic;             // MQTT last will
 const char *publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic; // State of the node
@@ -428,7 +429,7 @@ void publishHADiscovery()
     origin["sw"] = "2024.1.0";
     origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
 
-    char payload[512];
+    char payload[768];
     size_t n = serializeJson(cfg, payload, sizeof(payload));
     if (n == 0 || n >= sizeof(payload))
     {
@@ -481,7 +482,7 @@ void publishHADiscovery()
     origin["sw"] = "2024.1.0";
     origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
 
-    char payload[512];
+    char payload[768];
     size_t n = serializeJson(cfg, payload, sizeof(payload));
     if (n == 0 || n >= sizeof(payload))
     {
@@ -694,9 +695,10 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   unsigned int copyLen = length < sizeof(message_buff) - 1 ? length : sizeof(message_buff) - 1;
   memcpy(message_buff, payload, copyLen);
   message_buff[copyLen] = '\0'; // Ensure null-termination
-  
+
   // Warn if payload was truncated
-  if (length >= sizeof(message_buff)) {
+  if (length >= sizeof(message_buff))
+  {
     Serial.println("  WARNING: Payload truncated from " + String(length) + " to " + String(copyLen) + " bytes");
   }
 
@@ -853,23 +855,27 @@ void controlOutputFour(bool state)
 bool checkWatchdog()
 {
   // Helper lambda to know if any output is currently on
-  auto anyOutputOn = []() {
+  auto anyOutputOn = []()
+  {
     return outputOnePoweredStatus || outputTwoPoweredStatus || outputThreePoweredStatus || outputFourPoweredStatus;
   };
 
   // If no outputs are on, reset timer ready for next activation
-  if (!anyOutputOn()) {
+  if (!anyOutputOn())
+  {
     watchdogTimeStarted = millis(); // Ready for next valve activation
     return false;
   }
 
   // A duration of 0 means the watchdog is disabled - never shut off by timeout
-  if (watchdogDurationMinutes == 0) {
+  if (watchdogDurationMinutes == 0)
+  {
     return false;
   }
 
   // When outputs are on, check duration
-  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis) {
+  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis)
+  {
     Serial.println("checkWatchdog: duration exceeded, shutting down all valves");
     return true;
   }
@@ -1039,11 +1045,13 @@ void checkState4()
   Also initialises lastRebootCheckDate to today so the device does not
   reboot immediately if it happens to boot on a scheduled-reboot day.
 */
-void setupNTP() {
+void setupNTP()
+{
   timeClient.begin();
   // Force an immediate NTP sync so getEpochTime() returns a real value
   // from the very first loop() iteration instead of 0.
-  if (timeClient.forceUpdate()) {
+  if (timeClient.forceUpdate())
+  {
     Serial.print("NTP initial sync. Current time: ");
     Serial.println(timeClient.getFormattedTime());
     // Record today so updateNTPTime() does not re-sync until tomorrow
@@ -1052,7 +1060,9 @@ void setupNTP() {
     // Pre-seed the reboot check to today so we do not reboot immediately
     // if the current day happens to be a scheduled-reboot day.
     lastRebootCheckDate = lastNtpUpdateDate;
-  } else {
+  }
+  else
+  {
     Serial.println("NTP initial sync failed; will retry in loop.");
   }
 }
@@ -1061,12 +1071,14 @@ void setupNTP() {
   Update the NTP time once a day.
   Uses date comparison instead of hour-based flag to avoid missing midnight.
 */
-void updateNTPTime() {
+void updateNTPTime()
+{
   // Get current date as epoch day (days since 1970-01-01)
   unsigned long currentEpochDay = timeClient.getEpochTime() / 86400UL;
-  
+
   // Update NTP if we haven't updated today
-  if (currentEpochDay != lastNtpUpdateDate) {
+  if (currentEpochDay != lastNtpUpdateDate)
+  {
     timeClient.update();
     lastNtpUpdateDate = currentEpochDay;
     Serial.print("NTP updated. Current time: ");
@@ -1078,23 +1090,27 @@ void updateNTPTime() {
   Check if the system should reboot (every 7 days during night hours 2-4 AM).
   Uses NTP date tracking to avoid millis() overflow issues.
 */
-void checkRebootCondition() {
+void checkRebootCondition()
+{
   // Get current date as epoch day (days since 1970-01-01)
   unsigned long currentEpochDay = timeClient.getEpochTime() / 86400UL;
-  
+
   // Check if we've crossed into a new reboot eligibility period (every 7 days)
   // Only check once per day to avoid multiple reboot attempts
-  if (currentEpochDay != lastRebootCheckDate) {
+  if (currentEpochDay != lastRebootCheckDate)
+  {
     lastRebootCheckDate = currentEpochDay;
-    
+
     // Check if we've reached 7-day interval (simplified: check if day is divisible by 7)
     // For production, you might track actual boot date, but this provides periodic reboots
-    if ((currentEpochDay % 7) == 0) {
+    if ((currentEpochDay % 7) == 0)
+    {
       timeClient.update(); // Ensure we have the latest time
       int currentHour = timeClient.getHours();
-      
+
       // Check if the current time is within the reboot window (2-4 AM)
-      if (currentHour >= rebootStartHour && currentHour < rebootEndHour) {
+      if (currentHour >= rebootStartHour && currentHour < rebootEndHour)
+      {
         Serial.println("Scheduled reboot: 7-day maintenance window reached");
         rebootArduino(); // Call the reboot function
       }
@@ -1204,7 +1220,8 @@ void loop()
 {
   // Check ethernet connection periodically for DHCP maintenance
   static unsigned long lastEthernetCheck = 0;
-  if (millis() - lastEthernetCheck >= 60000) { // Check every 60 seconds
+  if (millis() - lastEthernetCheck >= 60000)
+  { // Check every 60 seconds
     checkEthernetConnection();
     lastEthernetCheck = millis();
   }
