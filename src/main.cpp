@@ -154,6 +154,11 @@ bool outputTwoPoweredStatus = false;
 bool outputThreePoweredStatus = false;
 bool outputFourPoweredStatus = false;
 
+bool anyOutputPowered()
+{
+  return outputOnePoweredStatus || outputTwoPoweredStatus || outputThreePoweredStatus || outputFourPoweredStatus;
+}
+
 // Define state machine states
 typedef enum
 {
@@ -364,6 +369,30 @@ void publishWatchdogState()
   }
 }
 
+// Publish JSON as retained MQTT message using streaming to avoid large temporary payload buffers.
+bool publishRetainedJson(const char *topic, const JsonDocument &doc)
+{
+  if (!mqttClient.connected())
+  {
+    return false;
+  }
+
+  const size_t payloadLen = measureJson(doc);
+  if (!mqttClient.beginPublish(topic, payloadLen, true))
+  {
+    return false;
+  }
+
+  const size_t written = serializeJson(doc, mqttClient);
+  if (written != payloadLen)
+  {
+    mqttClient.endPublish();
+    return false;
+  }
+
+  return mqttClient.endPublish();
+}
+
 // Update watchdog duration from minutes to milliseconds
 void updateWatchdogDuration()
 {
@@ -385,7 +414,6 @@ void publishHADiscovery()
     // Discovery topic: <prefix>/valve/<node_id>/valve<i>/config
     String topic = String(haDiscoveryPrefix) + "/valve/" + nodeId + "/valve" + String(i) + "/config";
 
-    StaticJsonDocument<512> cfg;
     // Friendly name and topics per valve
     const char *cmdTopic = nullptr;
     const char *stTopic = nullptr;
@@ -415,59 +443,95 @@ void publishHADiscovery()
     default:
       continue; // skip any unexpected index
     }
-    cfg["name"] = vName;
-    // Unique id
-    cfg["unique_id"] = String(nodeId) + String("_valve") + String(i);
-    // Device class for water valves
-    cfg["device_class"] = "water";
-    // Topics
-    cfg["cmd_t"] = cmdTopic;
-    cfg["stat_t"] = stTopic;
-    // Valve command payloads (OPEN/CLOSE are HA defaults)
-    cfg["pl_open"] = "OPEN";
-    cfg["pl_cls"] = "CLOSE";
-    // State payloads (open/closed are HA defaults)
-    cfg["stat_open"] = "open";
-    cfg["stat_clsd"] = "closed";
-    // Valve does not report position
-    cfg["reports_position"] = false;
-    // Availability
-    cfg["avty_t"] = publishLastWillTopic;
-    cfg["pl_avail"] = "online";
-    cfg["pl_not_avail"] = "offline";
-    // Optimistic mode (state updates immediately without waiting for feedback)
-    cfg["optimistic"] = false;
-
-    // Device metadata
-    JsonObject dev = cfg.createNestedObject("device");
-    JsonArray idArr = dev.createNestedArray("identifiers");
-    idArr.add(nodeId);
-    dev["name"] = haDeviceName;
-    dev["model"] = "Controllino Maxi";
-    dev["manufacturer"] = "Controllino";
-    dev["sw_version"] = "2024.1.0";
-
-    // Origin info (who created this discovery message)
-    JsonObject origin = cfg.createNestedObject("o");
-    origin["name"] = "Controllino-Irrigation";
-    origin["sw"] = "2024.1.0";
-    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
-
-    char payload[768];
-    size_t n = serializeJson(cfg, payload, sizeof(payload));
-    if (n == 0 || n >= sizeof(payload))
     {
-      Serial.println("  Discovery payload too large for valve " + String(i));
-    }
-    else
-    {
-      if (!mqttClient.publish(topic.c_str(), payload, true))
+      // Keep valve buffers scoped to this block to reduce peak stack usage.
+      StaticJsonDocument<384> cfg;
+      cfg["name"] = vName;
+      // Unique id
+      cfg["unique_id"] = String(nodeId) + String("_valve") + String(i);
+      // Device class for water valves
+      cfg["device_class"] = "water";
+      // Topics
+      cfg["cmd_t"] = cmdTopic;
+      cfg["stat_t"] = stTopic;
+      // Valve command payloads (OPEN/CLOSE are HA defaults)
+      cfg["pl_open"] = "OPEN";
+      cfg["pl_cls"] = "CLOSE";
+      // State payloads (open/closed are HA defaults)
+      cfg["stat_open"] = "open";
+      cfg["stat_clsd"] = "closed";
+      // Valve does not report position
+      cfg["reports_position"] = false;
+      // Availability
+      cfg["avty_t"] = publishLastWillTopic;
+      cfg["pl_avail"] = "online";
+      cfg["pl_not_avail"] = "offline";
+      // Optimistic mode (state updates immediately without waiting for feedback)
+      cfg["optimistic"] = false;
+
+      // Device metadata
+      JsonObject dev = cfg.createNestedObject("device");
+      JsonArray idArr = dev.createNestedArray("identifiers");
+      idArr.add(nodeId);
+      dev["name"] = haDeviceName;
+      dev["model"] = "Controllino Maxi";
+      dev["manufacturer"] = "Controllino";
+      dev["sw_version"] = "2024.1.0";
+
+      // Origin info (who created this discovery message)
+      JsonObject origin = cfg.createNestedObject("o");
+      origin["name"] = "Controllino-Irrigation";
+      origin["sw"] = "2024.1.0";
+      origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
+
+      if (!publishRetainedJson(topic.c_str(), cfg))
       {
         Serial.println("  Failed to publish discovery to [" + topic + "]");
       }
       else
       {
         Serial.println("  Published discovery for valve " + String(i));
+      }
+    }
+
+    // Also expose each valve as a switch entity for automations that
+    // specifically require a switch domain entity.
+    {
+      String switchTopic = String(haDiscoveryPrefix) + "/switch/" + nodeId + "/valve" + String(i) + "_switch/config";
+      StaticJsonDocument<384> swCfg;
+      swCfg["name"] = String(vName) + " Switch";
+      swCfg["unique_id"] = String(nodeId) + String("_valve") + String(i) + String("_switch");
+      swCfg["cmd_t"] = cmdTopic;
+      swCfg["stat_t"] = stTopic;
+      swCfg["pl_on"] = "OPEN";
+      swCfg["pl_off"] = "CLOSE";
+      swCfg["stat_on"] = "open";
+      swCfg["stat_off"] = "closed";
+      swCfg["icon"] = "mdi:water";
+      swCfg["avty_t"] = publishLastWillTopic;
+      swCfg["pl_avail"] = "online";
+      swCfg["pl_not_avail"] = "offline";
+
+      JsonObject swDev = swCfg.createNestedObject("device");
+      JsonArray swIdArr = swDev.createNestedArray("identifiers");
+      swIdArr.add(nodeId);
+      swDev["name"] = haDeviceName;
+      swDev["model"] = "Controllino Maxi";
+      swDev["manufacturer"] = "Controllino";
+      swDev["sw_version"] = "2026.6.15";
+
+      JsonObject swOrigin = swCfg.createNestedObject("o");
+      swOrigin["name"] = "Controllino-Irrigation";
+      swOrigin["sw"] = "2026.6.15";
+      swOrigin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
+
+      if (!publishRetainedJson(switchTopic.c_str(), swCfg))
+      {
+        Serial.println("  Failed to publish discovery to [" + switchTopic + "]");
+      }
+      else
+      {
+        Serial.println("  Published discovery for switch " + String(i));
       }
     }
   }
@@ -506,22 +570,126 @@ void publishHADiscovery()
     origin["sw"] = "2026.6.15";
     origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
 
-    char payload[768];
-    size_t n = serializeJson(cfg, payload, sizeof(payload));
-    if (n == 0 || n >= sizeof(payload))
+    if (!publishRetainedJson(topic.c_str(), cfg))
     {
-      Serial.println("  Discovery payload too large for watchdog");
+      Serial.println("  Failed to publish watchdog discovery");
     }
     else
     {
-      if (!mqttClient.publish(topic.c_str(), payload, true))
-      {
-        Serial.println("  Failed to publish watchdog discovery");
-      }
-      else
-      {
-        Serial.println("  Published discovery for watchdog duration");
-      }
+      Serial.println("  Published discovery for watchdog duration");
+    }
+  }
+
+  // Publish diagnostic connectivity and network sensors for Home Assistant
+  {
+    // Online/connected status from LWT topic
+    String topic = String(haDiscoveryPrefix) + "/binary_sensor/" + nodeId + "/online/config";
+    StaticJsonDocument<512> cfg;
+    cfg["name"] = "Online";
+    cfg["unique_id"] = String(nodeId) + "_online";
+    cfg["stat_t"] = publishLastWillTopic;
+    cfg["pl_on"] = "online";
+    cfg["pl_off"] = "offline";
+    cfg["dev_cla"] = "connectivity";
+    cfg["entity_category"] = "diagnostic";
+    cfg["avty_t"] = publishLastWillTopic;
+    cfg["pl_avail"] = "online";
+    cfg["pl_not_avail"] = "offline";
+
+    JsonObject dev = cfg.createNestedObject("device");
+    JsonArray idArr = dev.createNestedArray("identifiers");
+    idArr.add(nodeId);
+    dev["name"] = haDeviceName;
+    dev["model"] = "Controllino Maxi";
+    dev["manufacturer"] = "Controllino";
+    dev["sw_version"] = "2026.6.15";
+
+    JsonObject origin = cfg.createNestedObject("o");
+    origin["name"] = "Controllino-Irrigation";
+    origin["sw"] = "2026.6.15";
+    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
+
+    if (!publishRetainedJson(topic.c_str(), cfg))
+    {
+      Serial.println("  Failed to publish online sensor discovery");
+    }
+    else
+    {
+      Serial.println("  Published discovery for online sensor");
+    }
+  }
+
+  {
+    // IP address extracted from node health JSON
+    String topic = String(haDiscoveryPrefix) + "/sensor/" + nodeId + "/ip/config";
+    StaticJsonDocument<512> cfg;
+    cfg["name"] = "IP";
+    cfg["unique_id"] = String(nodeId) + "_ip";
+    cfg["stat_t"] = publishNodeHealthJsonTopic;
+    cfg["val_tpl"] = "{{ value_json.IP }}";
+    cfg["icon"] = "mdi:ip-network";
+    cfg["entity_category"] = "diagnostic";
+    cfg["avty_t"] = publishLastWillTopic;
+    cfg["pl_avail"] = "online";
+    cfg["pl_not_avail"] = "offline";
+
+    JsonObject dev = cfg.createNestedObject("device");
+    JsonArray idArr = dev.createNestedArray("identifiers");
+    idArr.add(nodeId);
+    dev["name"] = haDeviceName;
+    dev["model"] = "Controllino Maxi";
+    dev["manufacturer"] = "Controllino";
+    dev["sw_version"] = "2026.6.15";
+
+    JsonObject origin = cfg.createNestedObject("o");
+    origin["name"] = "Controllino-Irrigation";
+    origin["sw"] = "2026.6.15";
+    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
+
+    if (!publishRetainedJson(topic.c_str(), cfg))
+    {
+      Serial.println("  Failed to publish IP sensor discovery");
+    }
+    else
+    {
+      Serial.println("  Published discovery for IP sensor");
+    }
+  }
+
+  {
+    // MAC address extracted from node health JSON
+    String topic = String(haDiscoveryPrefix) + "/sensor/" + nodeId + "/mac/config";
+    StaticJsonDocument<512> cfg;
+    cfg["name"] = "MAC";
+    cfg["unique_id"] = String(nodeId) + "_mac";
+    cfg["stat_t"] = publishNodeHealthJsonTopic;
+    cfg["val_tpl"] = "{{ value_json.MAC }}";
+    cfg["icon"] = "mdi:lan-connect";
+    cfg["entity_category"] = "diagnostic";
+    cfg["avty_t"] = publishLastWillTopic;
+    cfg["pl_avail"] = "online";
+    cfg["pl_not_avail"] = "offline";
+
+    JsonObject dev = cfg.createNestedObject("device");
+    JsonArray idArr = dev.createNestedArray("identifiers");
+    idArr.add(nodeId);
+    dev["name"] = haDeviceName;
+    dev["model"] = "Controllino Maxi";
+    dev["manufacturer"] = "Controllino";
+    dev["sw_version"] = "2026.6.15";
+
+    JsonObject origin = cfg.createNestedObject("o");
+    origin["name"] = "Controllino-Irrigation";
+    origin["sw"] = "2026.6.15";
+    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
+
+    if (!publishRetainedJson(topic.c_str(), cfg))
+    {
+      Serial.println("  Failed to publish MAC sensor discovery");
+    }
+    else
+    {
+      Serial.println("  Published discovery for MAC sensor");
     }
   }
 }
@@ -727,6 +895,9 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   }
 
   String msgString = String(message_buff); // Convert to string once
+  String normalizedMsg = msgString;
+  normalizedMsg.trim();
+  normalizedMsg.toUpperCase();
   Serial.println("  Payload: " + msgString);
 
   // Check the message topic and update state accordingly
@@ -735,44 +906,44 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
   // Process valve commands (OPEN/CLOSE format per HA valve standard)
   if (srtTopic.equals(subscribeCommandTopic1))
   {
-    if (msgString == "OPEN" || msgString == "1")
+    if (normalizedMsg == "OPEN" || normalizedMsg == "ON" || normalizedMsg == "1")
     {
       stateMachine1 = s_Output1Start; // Set output one to be on
     }
-    else if (msgString == "CLOSE" || msgString == "0")
+    else if (normalizedMsg == "CLOSE" || normalizedMsg == "CLOSED" || normalizedMsg == "OFF" || normalizedMsg == "0")
     {
       stateMachine1 = s_Output1Stop; // Set output one to be off
     }
   }
   else if (srtTopic.equals(subscribeCommandTopic2))
   {
-    if (msgString == "OPEN" || msgString == "1")
+    if (normalizedMsg == "OPEN" || normalizedMsg == "ON" || normalizedMsg == "1")
     {
       stateMachine2 = s_Output2Start; // Set output two to be on
     }
-    else if (msgString == "CLOSE" || msgString == "0")
+    else if (normalizedMsg == "CLOSE" || normalizedMsg == "CLOSED" || normalizedMsg == "OFF" || normalizedMsg == "0")
     {
       stateMachine2 = s_Output2Stop; // Set output two to be off
     }
   }
   else if (srtTopic.equals(subscribeCommandTopic3))
   {
-    if (msgString == "OPEN" || msgString == "1")
+    if (normalizedMsg == "OPEN" || normalizedMsg == "ON" || normalizedMsg == "1")
     {
       stateMachine3 = s_Output3Start; // Set output three to be on
     }
-    else if (msgString == "CLOSE" || msgString == "0")
+    else if (normalizedMsg == "CLOSE" || normalizedMsg == "CLOSED" || normalizedMsg == "OFF" || normalizedMsg == "0")
     {
       stateMachine3 = s_Output3Stop; // Set output three to be off
     }
   }
   else if (srtTopic.equals(subscribeCommandTopic4))
   {
-    if (msgString == "OPEN" || msgString == "1")
+    if (normalizedMsg == "OPEN" || normalizedMsg == "ON" || normalizedMsg == "1")
     {
       stateMachine4 = s_Output4Start; // Set output four to be on
     }
-    else if (msgString == "CLOSE" || msgString == "0")
+    else if (normalizedMsg == "CLOSE" || normalizedMsg == "CLOSED" || normalizedMsg == "OFF" || normalizedMsg == "0")
     {
       stateMachine4 = s_Output4Stop; // Set output four to be off
     }
@@ -804,6 +975,10 @@ void controlOutputOne(bool state)
 {
   if (state == true)
   {
+    if (!anyOutputPowered())
+    {
+      watchdogTimeStarted = millis();
+    }
     // Command the output on.
     Serial.println("controlOutputOne state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_ONE, HIGH);
@@ -823,6 +998,10 @@ void controlOutputTwo(bool state)
 {
   if (state == true)
   {
+    if (!anyOutputPowered())
+    {
+      watchdogTimeStarted = millis();
+    }
     // Command the output on.
     Serial.println("controlOutputTwo state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_TWO, HIGH);
@@ -842,6 +1021,10 @@ void controlOutputThree(bool state)
 {
   if (state == true)
   {
+    if (!anyOutputPowered())
+    {
+      watchdogTimeStarted = millis();
+    }
     // Command the output on.
     Serial.println("controlOutputThree state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_THREE, HIGH);
@@ -861,6 +1044,10 @@ void controlOutputFour(bool state)
 {
   if (state == true)
   {
+    if (!anyOutputPowered())
+    {
+      watchdogTimeStarted = millis();
+    }
     // Command the output on.
     Serial.println("controlOutputFour state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_FOUR, HIGH);
@@ -878,14 +1065,8 @@ void controlOutputFour(bool state)
 
 bool checkWatchdog()
 {
-  // Helper lambda to know if any output is currently on
-  auto anyOutputOn = []()
-  {
-    return outputOnePoweredStatus || outputTwoPoweredStatus || outputThreePoweredStatus || outputFourPoweredStatus;
-  };
-
   // If no outputs are on, reset timer ready for next activation
-  if (!anyOutputOn())
+  if (!anyOutputPowered())
   {
     watchdogTimeStarted = millis(); // Ready for next valve activation
     return false;
@@ -1226,6 +1407,7 @@ void setup()
   // Set MQTT settings
   Serial.println("Setup MQTT..");
   mqttClient.setServer(mqtt_server, 1883);
+  mqttClient.setBufferSize(1024);
   mqttClient.setCallback(mqttcallback);
   checkMqttConnection();
   Serial.println("  Setup MQTT complete");
