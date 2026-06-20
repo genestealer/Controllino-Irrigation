@@ -80,6 +80,10 @@ NTPClient timeClient(ntpUDP, ntp_server, 0, 86400000); // Update every 24 hours 
 // Constants for reboot logic
 unsigned long lastRebootCheckDate = 0; // Epoch day of the last reboot-eligibility check (set after NTP sync)
 unsigned long bootEpochDay = 0;        // Epoch day the device booted / last rebooted (0 until first NTP sync)
+// Unix epoch seconds at the moment the device booted. Stays 0 until NTP has
+// synced at least once; used to report the "Last Boot" diagnostic timestamp to
+// Home Assistant only after we have a valid time.
+unsigned long bootEpochTime = 0;
 const int rebootStartHour = 2;         // Start of reboot window (2:00 AM)
 const int rebootEndHour = 4;           // End of reboot window (4:00 AM)
 const unsigned long rebootIntervalDays = 7; // Reboot after this many days of uptime
@@ -280,6 +284,76 @@ void checkEthernetConnection()
   // Serial.println("Current IP address: " + Ethernet.localIP());
 }
 
+// Convert a Unix epoch (UTC seconds) into an ISO 8601 string of the form
+// "YYYY-MM-DDTHH:MM:SS+00:00". Done manually rather than using gmtime() because
+// avr-libc's time functions use a 2000-01-01 epoch, which would offset NTP's
+// 1970-based values. out must be at least 26 bytes.
+void epochToIso8601(unsigned long epoch, char *out, size_t outLen)
+{
+  unsigned long days = epoch / 86400UL;
+  unsigned long rem = epoch % 86400UL;
+  int hours = (int)(rem / 3600UL);
+  int minutes = (int)((rem % 3600UL) / 60UL);
+  int seconds = (int)(rem % 60UL);
+
+  // Walk forward from 1970 accounting for leap years to find the year.
+  long year = 1970;
+  while (true)
+  {
+    bool leap = ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0));
+    unsigned long daysInYear = leap ? 366UL : 365UL;
+    if (days >= daysInYear)
+    {
+      days -= daysInYear;
+      year++;
+    }
+    else
+    {
+      break;
+    }
+  }
+
+  static const uint8_t monthDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  bool leap = ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0));
+  int month = 0;
+  while (month < 12)
+  {
+    uint8_t dim = monthDays[month];
+    if (month == 1 && leap)
+    {
+      dim = 29;
+    }
+    if (days >= dim)
+    {
+      days -= dim;
+      month++;
+    }
+    else
+    {
+      break;
+    }
+  }
+  int day = (int)days + 1;
+
+  snprintf(out, outLen, "%04ld-%02d-%02dT%02d:%02d:%02d+00:00", year, month + 1, day, hours, minutes, seconds);
+}
+
+// Record the boot moment (in Unix epoch seconds) the first time a valid NTP
+// time is available. Subtracting millis() back-calculates the boot instant, so
+// it is correct regardless of when this is first called after startup.
+void captureBootEpochTime()
+{
+  if (bootEpochTime != 0)
+  {
+    return; // Already captured.
+  }
+  unsigned long epoch = timeClient.getEpochTime();
+  if (epoch >= 1000000000UL) // Sanity check: clock has synced (after 2001).
+  {
+    bootEpochTime = epoch - (millis() / 1000UL);
+  }
+}
+
 // Publish this nodes state via MQTT
 void publishNodeHealth()
 {
@@ -303,6 +377,15 @@ void publishNodeHealth()
   doc1["ClientName"] = clientName;
   doc1["IP"] = bufIP;
   doc1["MAC"] = bufMAC; // Include the MAC address in the JSON payload
+
+  // Only include the boot timestamp once NTP has synced, so Home Assistant
+  // never receives an invalid (pre-sync) time for the uptime sensor.
+  char bufBoot[26]; // "YYYY-MM-DDTHH:MM:SS+00:00" + NUL
+  if (bootEpochTime != 0)
+  {
+    epochToIso8601(bootEpochTime, bufBoot, sizeof(bufBoot));
+    doc1["LastBoot"] = bufBoot;
+  }
 
   serializeJsonPretty(doc1, Serial);
   Serial.println(""); // Add new line as serializeJson() leaves the line open.
@@ -649,6 +732,32 @@ void publishHADiscovery()
       Serial.println("  Failed to publish MAC sensor discovery");
     else
       Serial.println("  Published discovery for MAC sensor");
+  }
+
+  // Last boot timestamp (uptime) extracted from node health JSON. Reported as a
+  // timestamp device class so Home Assistant shows how long the node has been
+  // running. The value only appears once NTP has synced (see publishNodeHealth).
+  {
+    StaticJsonDocument<512> cfg;
+    cfg["name"] = "Last Boot";
+    snprintf(uniqueId, sizeof(uniqueId), "%s_last_boot", nodeId);
+    cfg["unique_id"] = uniqueId;
+    cfg["stat_t"] = publishNodeHealthJsonTopic;
+    cfg["val_tpl"] = "{{ value_json.LastBoot }}";
+    cfg["dev_cla"] = "timestamp";
+    cfg["icon"] = "mdi:clock-start";
+    cfg["entity_category"] = "diagnostic";
+    cfg["avty_t"] = publishLastWillTopic;
+    cfg["pl_avail"] = "online";
+    cfg["pl_not_avail"] = "offline";
+
+    addDeviceAndOrigin(cfg);
+
+    snprintf(topic, sizeof(topic), "%s/sensor/%s/last_boot/config", haDiscoveryPrefix, nodeId);
+    if (!publishRetainedJson(topic, cfg))
+      Serial.println("  Failed to publish Last Boot sensor discovery");
+    else
+      Serial.println("  Published discovery for Last Boot sensor");
   }
 }
 
@@ -1197,6 +1306,8 @@ void setupNTP()
     // interval is counted from startup and we never reboot immediately.
     bootEpochDay = lastNtpUpdateDate;
     lastRebootCheckDate = lastNtpUpdateDate;
+    // Record the boot instant for the Home Assistant uptime sensor.
+    captureBootEpochTime();
   }
   else
   {
@@ -1224,6 +1335,8 @@ void updateNTPTime()
     if (timeClient.update())
     {
       lastNtpUpdateDate = timeClient.getEpochTime() / 86400UL;
+      // Capture the boot instant if the initial sync in setup failed.
+      captureBootEpochTime();
       Serial.print("NTP updated. Current time: ");
       Serial.println(timeClient.getFormattedTime());
     }
