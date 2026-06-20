@@ -79,8 +79,10 @@ NTPClient timeClient(ntpUDP, ntp_server, 0, 86400000); // Update every 24 hours 
 
 // Constants for reboot logic
 unsigned long lastRebootCheckDate = 0; // Epoch day of the last reboot-eligibility check (set after NTP sync)
+unsigned long bootEpochDay = 0;        // Epoch day the device booted / last rebooted (0 until first NTP sync)
 const int rebootStartHour = 2;         // Start of reboot window (2:00 AM)
 const int rebootEndHour = 4;           // End of reboot window (4:00 AM)
+const unsigned long rebootIntervalDays = 7; // Reboot after this many days of uptime
 // ULONG_MAX forces an NTP update on the very first call to updateNTPTime()
 unsigned long lastNtpUpdateDate = ULONG_MAX;
 
@@ -132,6 +134,9 @@ const long publishInterval = 120000; // Publish frequency in milliseconds 120000
 
 // Home Assistant MQTT Discovery
 const char *haDiscoveryPrefix = "homeassistant"; // HA discovery root topic
+// Firmware version reported to Home Assistant (single source of truth for all
+// discovery entities and the origin metadata).
+#define FIRMWARE_VERSION "2026.6.15"
 
 // Forward declarations
 void mqttPublishStatusData(bool ignorePublishInterval);
@@ -153,11 +158,6 @@ bool outputOnePoweredStatus = false;
 bool outputTwoPoweredStatus = false;
 bool outputThreePoweredStatus = false;
 bool outputFourPoweredStatus = false;
-
-bool anyOutputPowered()
-{
-  return outputOnePoweredStatus || outputTwoPoweredStatus || outputThreePoweredStatus || outputFourPoweredStatus;
-}
 
 // Define state machine states
 typedef enum
@@ -207,7 +207,10 @@ typedef enum
 // Watchdog duration timer, to set maximum duration in milliseconds keep outputs on. (In case of network/server connection break)
 int watchdogDurationMinutes = 60;                        // Default: 60 minutes (controllable via MQTT)
 unsigned long watchdogDurationTimeSetMillis = 3600000UL; // Calculated from watchdogDurationMinutes (60 mins = 3600000 millis)
-unsigned long watchdogTimeStarted = 0UL;
+// Per-valve watchdog start time. Each valve has its own independent timer so
+// that turning one valve on does not affect the timeout of another. Indexed by
+// the irrigationOutputs enum (outputOne..outputFour).
+unsigned long watchdogTimeStarted[4] = {0UL, 0UL, 0UL, 0UL};
 
 /*
 Reboot the Arduino using the watchdog timer.
@@ -295,10 +298,11 @@ void publishNodeHealth()
   // Prepare and send the data in JSON to MQTT
   // Use a static JSON document with bounded capacity (saves SRAM and avoids dynamic allocation)
   StaticJsonDocument<json_buffer_size> doc1;
-  // INFO: the data must be converted into a string; a problem occurs when using floats...
-  doc1["ClientName"] = String(clientName);
-  doc1["IP"] = String(bufIP);
-  doc1["MAC"] = String(bufMAC); // Include the MAC address in the JSON payload
+  // const char* values are stored by reference; the char buffers above are
+  // copied into the document before it is serialized below, so both are safe.
+  doc1["ClientName"] = clientName;
+  doc1["IP"] = bufIP;
+  doc1["MAC"] = bufMAC; // Include the MAC address in the JSON payload
 
   serializeJsonPretty(doc1, Serial);
   Serial.println(""); // Add new line as serializeJson() leaves the line open.
@@ -306,9 +310,17 @@ void publishNodeHealth()
   // Serialize to a temporary buffer
   serializeJson(doc1, buffer);
   if (!mqttClient.publish(publishNodeHealthJsonTopic, buffer, true)) // Retain data.
-    Serial.println("  Failed to publish JSON sensor data to [" + String(publishNodeHealthJsonTopic) + "]");
+  {
+    Serial.print("  Failed to publish JSON sensor data to [");
+    Serial.print(publishNodeHealthJsonTopic);
+    Serial.println("]");
+  }
   else
-    Serial.println("  JSON Sensor data published to [" + String(publishNodeHealthJsonTopic) + "] ");
+  {
+    Serial.print("  JSON Sensor data published to [");
+    Serial.print(publishNodeHealthJsonTopic);
+    Serial.println("] ");
+  }
 
   Serial.println("  Completed publishNodeHealth() function");
 }
@@ -400,20 +412,40 @@ void updateWatchdogDuration()
   Serial.println("  Watchdog duration updated to " + String(watchdogDurationMinutes) + " minutes (" + String(watchdogDurationTimeSetMillis) + " ms)");
 }
 
+// Add the shared Home Assistant device and origin metadata to a discovery doc.
+// Centralises the firmware version and device identity so every entity reports
+// the same values.
+void addDeviceAndOrigin(JsonDocument &doc)
+{
+  JsonObject dev = doc.createNestedObject("device");
+  JsonArray idArr = dev.createNestedArray("identifiers");
+  idArr.add(clientName);
+  dev["name"] = haDeviceName;
+  dev["model"] = "Controllino Maxi";
+  dev["manufacturer"] = "Controllino";
+  dev["sw_version"] = FIRMWARE_VERSION;
+
+  JsonObject origin = doc.createNestedObject("o");
+  origin["name"] = "Controllino-Irrigation";
+  origin["sw"] = FIRMWARE_VERSION;
+  origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
+}
+
 // Publish Home Assistant MQTT Discovery configs (retained)
 void publishHADiscovery()
 {
   Serial.println("Publishing Home Assistant MQTT Discovery configs...");
 
-  // Device info shared among entities
-  const char *nodeId = clientName; // use clientName as node_id
+  // Use clientName as the node_id in discovery topics and unique ids.
+  const char *nodeId = clientName;
+  // Reused stack buffers avoid repeated String heap allocations.
+  char topic[96];
+  char uniqueId[64];
+  char name[48];
 
   // Build and publish valve configs for 4 irrigation valves
   for (uint8_t i = 1; i <= 4; i++)
   {
-    // Discovery topic: <prefix>/valve/<node_id>/valve<i>/config
-    String topic = String(haDiscoveryPrefix) + "/valve/" + nodeId + "/valve" + String(i) + "/config";
-
     // Friendly name and topics per valve
     const char *cmdTopic = nullptr;
     const char *stTopic = nullptr;
@@ -447,8 +479,8 @@ void publishHADiscovery()
       // Keep valve buffers scoped to this block to reduce peak stack usage.
       StaticJsonDocument<384> cfg;
       cfg["name"] = vName;
-      // Unique id
-      cfg["unique_id"] = String(nodeId) + String("_valve") + String(i);
+      snprintf(uniqueId, sizeof(uniqueId), "%s_valve%u", nodeId, i);
+      cfg["unique_id"] = uniqueId;
       // Device class for water valves
       cfg["device_class"] = "water";
       // Topics
@@ -469,38 +501,30 @@ void publishHADiscovery()
       // Optimistic mode (state updates immediately without waiting for feedback)
       cfg["optimistic"] = false;
 
-      // Device metadata
-      JsonObject dev = cfg.createNestedObject("device");
-      JsonArray idArr = dev.createNestedArray("identifiers");
-      idArr.add(nodeId);
-      dev["name"] = haDeviceName;
-      dev["model"] = "Controllino Maxi";
-      dev["manufacturer"] = "Controllino";
-      dev["sw_version"] = "2024.1.0";
+      addDeviceAndOrigin(cfg);
 
-      // Origin info (who created this discovery message)
-      JsonObject origin = cfg.createNestedObject("o");
-      origin["name"] = "Controllino-Irrigation";
-      origin["sw"] = "2024.1.0";
-      origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
-
-      if (!publishRetainedJson(topic.c_str(), cfg))
+      snprintf(topic, sizeof(topic), "%s/valve/%s/valve%u/config", haDiscoveryPrefix, nodeId, i);
+      if (!publishRetainedJson(topic, cfg))
       {
-        Serial.println("  Failed to publish discovery to [" + topic + "]");
+        Serial.print("  Failed to publish discovery to [");
+        Serial.print(topic);
+        Serial.println("]");
       }
       else
       {
-        Serial.println("  Published discovery for valve " + String(i));
+        Serial.print("  Published discovery for valve ");
+        Serial.println(i);
       }
     }
 
     // Also expose each valve as a switch entity for automations that
     // specifically require a switch domain entity.
     {
-      String switchTopic = String(haDiscoveryPrefix) + "/switch/" + nodeId + "/valve" + String(i) + "_switch/config";
       StaticJsonDocument<384> swCfg;
-      swCfg["name"] = String(vName) + " Switch";
-      swCfg["unique_id"] = String(nodeId) + String("_valve") + String(i) + String("_switch");
+      snprintf(name, sizeof(name), "%s Switch", vName);
+      swCfg["name"] = name;
+      snprintf(uniqueId, sizeof(uniqueId), "%s_valve%u_switch", nodeId, i);
+      swCfg["unique_id"] = uniqueId;
       swCfg["cmd_t"] = cmdTopic;
       swCfg["stat_t"] = stTopic;
       swCfg["pl_on"] = "OPEN";
@@ -512,36 +536,29 @@ void publishHADiscovery()
       swCfg["pl_avail"] = "online";
       swCfg["pl_not_avail"] = "offline";
 
-      JsonObject swDev = swCfg.createNestedObject("device");
-      JsonArray swIdArr = swDev.createNestedArray("identifiers");
-      swIdArr.add(nodeId);
-      swDev["name"] = haDeviceName;
-      swDev["model"] = "Controllino Maxi";
-      swDev["manufacturer"] = "Controllino";
-      swDev["sw_version"] = "2026.6.15";
+      addDeviceAndOrigin(swCfg);
 
-      JsonObject swOrigin = swCfg.createNestedObject("o");
-      swOrigin["name"] = "Controllino-Irrigation";
-      swOrigin["sw"] = "2026.6.15";
-      swOrigin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
-
-      if (!publishRetainedJson(switchTopic.c_str(), swCfg))
+      snprintf(topic, sizeof(topic), "%s/switch/%s/valve%u_switch/config", haDiscoveryPrefix, nodeId, i);
+      if (!publishRetainedJson(topic, swCfg))
       {
-        Serial.println("  Failed to publish discovery to [" + switchTopic + "]");
+        Serial.print("  Failed to publish discovery to [");
+        Serial.print(topic);
+        Serial.println("]");
       }
       else
       {
-        Serial.println("  Published discovery for switch " + String(i));
+        Serial.print("  Published discovery for switch ");
+        Serial.println(i);
       }
     }
   }
 
   // Publish watchdog duration number entity for Home Assistant
   {
-    String topic = String(haDiscoveryPrefix) + "/number/" + nodeId + "/watchdog/config";
     StaticJsonDocument<512> cfg;
     cfg["name"] = "Watchdog Duration";
-    cfg["unique_id"] = String(nodeId) + "_watchdog_duration";
+    snprintf(uniqueId, sizeof(uniqueId), "%s_watchdog_duration", nodeId);
+    cfg["unique_id"] = uniqueId;
     cfg["cmd_t"] = watchdogCommandTopic;
     cfg["stat_t"] = watchdogStateTopic;
     cfg["unit_of_meas"] = "min";
@@ -555,38 +572,21 @@ void publishHADiscovery()
     cfg["pl_not_avail"] = "offline";
     cfg["entity_category"] = "config";
 
-    // Device metadata
-    JsonObject dev = cfg.createNestedObject("device");
-    JsonArray idArr = dev.createNestedArray("identifiers");
-    idArr.add(nodeId);
-    dev["name"] = haDeviceName;
-    dev["model"] = "Controllino Maxi";
-    dev["manufacturer"] = "Controllino";
-    dev["sw_version"] = "2026.6.15";
+    addDeviceAndOrigin(cfg);
 
-    // Origin info
-    JsonObject origin = cfg.createNestedObject("o");
-    origin["name"] = "Controllino-Irrigation";
-    origin["sw"] = "2026.6.15";
-    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
-
-    if (!publishRetainedJson(topic.c_str(), cfg))
-    {
+    snprintf(topic, sizeof(topic), "%s/number/%s/watchdog/config", haDiscoveryPrefix, nodeId);
+    if (!publishRetainedJson(topic, cfg))
       Serial.println("  Failed to publish watchdog discovery");
-    }
     else
-    {
       Serial.println("  Published discovery for watchdog duration");
-    }
   }
 
-  // Publish diagnostic connectivity and network sensors for Home Assistant
+  // Online/connected status from LWT topic
   {
-    // Online/connected status from LWT topic
-    String topic = String(haDiscoveryPrefix) + "/binary_sensor/" + nodeId + "/online/config";
     StaticJsonDocument<512> cfg;
     cfg["name"] = "Online";
-    cfg["unique_id"] = String(nodeId) + "_online";
+    snprintf(uniqueId, sizeof(uniqueId), "%s_online", nodeId);
+    cfg["unique_id"] = uniqueId;
     cfg["stat_t"] = publishLastWillTopic;
     cfg["pl_on"] = "online";
     cfg["pl_off"] = "offline";
@@ -596,35 +596,21 @@ void publishHADiscovery()
     cfg["pl_avail"] = "online";
     cfg["pl_not_avail"] = "offline";
 
-    JsonObject dev = cfg.createNestedObject("device");
-    JsonArray idArr = dev.createNestedArray("identifiers");
-    idArr.add(nodeId);
-    dev["name"] = haDeviceName;
-    dev["model"] = "Controllino Maxi";
-    dev["manufacturer"] = "Controllino";
-    dev["sw_version"] = "2026.6.15";
+    addDeviceAndOrigin(cfg);
 
-    JsonObject origin = cfg.createNestedObject("o");
-    origin["name"] = "Controllino-Irrigation";
-    origin["sw"] = "2026.6.15";
-    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
-
-    if (!publishRetainedJson(topic.c_str(), cfg))
-    {
+    snprintf(topic, sizeof(topic), "%s/binary_sensor/%s/online/config", haDiscoveryPrefix, nodeId);
+    if (!publishRetainedJson(topic, cfg))
       Serial.println("  Failed to publish online sensor discovery");
-    }
     else
-    {
       Serial.println("  Published discovery for online sensor");
-    }
   }
 
+  // IP address extracted from node health JSON
   {
-    // IP address extracted from node health JSON
-    String topic = String(haDiscoveryPrefix) + "/sensor/" + nodeId + "/ip/config";
     StaticJsonDocument<512> cfg;
     cfg["name"] = "IP";
-    cfg["unique_id"] = String(nodeId) + "_ip";
+    snprintf(uniqueId, sizeof(uniqueId), "%s_ip", nodeId);
+    cfg["unique_id"] = uniqueId;
     cfg["stat_t"] = publishNodeHealthJsonTopic;
     cfg["val_tpl"] = "{{ value_json.IP }}";
     cfg["icon"] = "mdi:ip-network";
@@ -633,35 +619,21 @@ void publishHADiscovery()
     cfg["pl_avail"] = "online";
     cfg["pl_not_avail"] = "offline";
 
-    JsonObject dev = cfg.createNestedObject("device");
-    JsonArray idArr = dev.createNestedArray("identifiers");
-    idArr.add(nodeId);
-    dev["name"] = haDeviceName;
-    dev["model"] = "Controllino Maxi";
-    dev["manufacturer"] = "Controllino";
-    dev["sw_version"] = "2026.6.15";
+    addDeviceAndOrigin(cfg);
 
-    JsonObject origin = cfg.createNestedObject("o");
-    origin["name"] = "Controllino-Irrigation";
-    origin["sw"] = "2026.6.15";
-    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
-
-    if (!publishRetainedJson(topic.c_str(), cfg))
-    {
+    snprintf(topic, sizeof(topic), "%s/sensor/%s/ip/config", haDiscoveryPrefix, nodeId);
+    if (!publishRetainedJson(topic, cfg))
       Serial.println("  Failed to publish IP sensor discovery");
-    }
     else
-    {
       Serial.println("  Published discovery for IP sensor");
-    }
   }
 
+  // MAC address extracted from node health JSON
   {
-    // MAC address extracted from node health JSON
-    String topic = String(haDiscoveryPrefix) + "/sensor/" + nodeId + "/mac/config";
     StaticJsonDocument<512> cfg;
     cfg["name"] = "MAC";
-    cfg["unique_id"] = String(nodeId) + "_mac";
+    snprintf(uniqueId, sizeof(uniqueId), "%s_mac", nodeId);
+    cfg["unique_id"] = uniqueId;
     cfg["stat_t"] = publishNodeHealthJsonTopic;
     cfg["val_tpl"] = "{{ value_json.MAC }}";
     cfg["icon"] = "mdi:lan-connect";
@@ -670,29 +642,16 @@ void publishHADiscovery()
     cfg["pl_avail"] = "online";
     cfg["pl_not_avail"] = "offline";
 
-    JsonObject dev = cfg.createNestedObject("device");
-    JsonArray idArr = dev.createNestedArray("identifiers");
-    idArr.add(nodeId);
-    dev["name"] = haDeviceName;
-    dev["model"] = "Controllino Maxi";
-    dev["manufacturer"] = "Controllino";
-    dev["sw_version"] = "2026.6.15";
+    addDeviceAndOrigin(cfg);
 
-    JsonObject origin = cfg.createNestedObject("o");
-    origin["name"] = "Controllino-Irrigation";
-    origin["sw"] = "2026.6.15";
-    origin["url"] = "https://github.com/genestealer/Controllino-Irrigation";
-
-    if (!publishRetainedJson(topic.c_str(), cfg))
-    {
+    snprintf(topic, sizeof(topic), "%s/sensor/%s/mac/config", haDiscoveryPrefix, nodeId);
+    if (!publishRetainedJson(topic, cfg))
       Serial.println("  Failed to publish MAC sensor discovery");
-    }
     else
-    {
       Serial.println("  Published discovery for MAC sensor");
-    }
   }
 }
+
 
 // Subscribe to MQTT topics
 void mqttSubscribe()
@@ -713,20 +672,15 @@ boolean mqttReconnect()
 {
   Serial.println("Inside mqttReconnect() function");
 
-  int retryCount = 0;
   Serial.println("  Attempting MQTT connection...");
-  // Retry up to 5 times if the MQTT connection fails
-  while (!mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage) && retryCount < 5)
+  // Single, non-blocking connection attempt. Retries are handled by
+  // checkMqttConnection(), which calls this every 5 seconds without blocking
+  // the main loop (the irrigation watchdog and state machines must keep
+  // running while we are disconnected).
+  if (!mqttClient.connect(clientName, mqtt_username, mqtt_password, publishLastWillTopic, 0, willRetain, willMessage))
   {
-    Serial.println("  Failed MQTT connection, retrying...");
-    delay(1000);
-    retryCount++;
-  }
-
-  if (retryCount == 5)
-  {
-    Serial.println("  Failed to connect to MQTT after 5 attempts. Aborting.");
-    return false; // Return false if connection fails after retries
+    Serial.println("  Failed MQTT connection.");
+    return false; // Return false if connection fails
   }
 
   // If successful, proceed with publishing and subscribing
@@ -851,8 +805,10 @@ void mqttPublishStatusData(bool ignorePublishInterval)
       else
         Serial.println("  JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
       Serial.println("  Complete mqttPublishStatusData() function");
-      digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW); // Turn off LED
     }
+    // Always turn the flash LED off, even when we skipped publishing because
+    // the MQTT client was not connected (otherwise the LED stays stuck on).
+    digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW); // Turn off LED
     Serial.println("##############################################");
     Serial.println("");
     Serial.println("");
@@ -860,19 +816,8 @@ void mqttPublishStatusData(bool ignorePublishInterval)
 }
 
 // MQTT payload
-// Add a flag to prevent simultaneous state changes
-bool stateChanging = false; // Flag to indicate state transition in progress
-
 void mqttcallback(char *topic, byte *payload, unsigned int length)
 {
-  // If state is already changing, ignore new state transitions
-  if (stateChanging)
-  {
-    return; // Prevent multiple state transitions simultaneously
-  }
-
-  stateChanging = true; // Set flag to indicate state change
-
   Serial.println("");
   Serial.println("**********************************************");
 
@@ -964,7 +909,6 @@ void mqttcallback(char *topic, byte *payload, unsigned int length)
     }
   }
 
-  stateChanging = false; // Reset flag after state transition
   digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW);
 
   Serial.println("  Completed mqttcallback() function");
@@ -975,10 +919,8 @@ void controlOutputOne(bool state)
 {
   if (state == true)
   {
-    if (!anyOutputPowered())
-    {
-      watchdogTimeStarted = millis();
-    }
+    // Start this valve's own watchdog timer (independent of other valves).
+    watchdogTimeStarted[outputOne] = millis();
     // Command the output on.
     Serial.println("controlOutputOne state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_ONE, HIGH);
@@ -998,10 +940,8 @@ void controlOutputTwo(bool state)
 {
   if (state == true)
   {
-    if (!anyOutputPowered())
-    {
-      watchdogTimeStarted = millis();
-    }
+    // Start this valve's own watchdog timer (independent of other valves).
+    watchdogTimeStarted[outputTwo] = millis();
     // Command the output on.
     Serial.println("controlOutputTwo state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_TWO, HIGH);
@@ -1021,10 +961,8 @@ void controlOutputThree(bool state)
 {
   if (state == true)
   {
-    if (!anyOutputPowered())
-    {
-      watchdogTimeStarted = millis();
-    }
+    // Start this valve's own watchdog timer (independent of other valves).
+    watchdogTimeStarted[outputThree] = millis();
     // Command the output on.
     Serial.println("controlOutputThree state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_THREE, HIGH);
@@ -1044,10 +982,8 @@ void controlOutputFour(bool state)
 {
   if (state == true)
   {
-    if (!anyOutputPowered())
-    {
-      watchdogTimeStarted = millis();
-    }
+    // Start this valve's own watchdog timer (independent of other valves).
+    watchdogTimeStarted[outputFour] = millis();
     // Command the output on.
     Serial.println("controlOutputFour state true");
     digitalWrite(DIGITAL_PIN_OUTPUT_FOUR, HIGH);
@@ -1063,25 +999,21 @@ void controlOutputFour(bool state)
   publishValveState(4, outputFourPoweredStatus);
 }
 
-bool checkWatchdog()
+// Per-valve watchdog check. Each valve is timed independently from when it was
+// turned on, so one valve timing out never affects another.
+// valveIndex is an irrigationOutputs enum value (outputOne..outputFour).
+bool checkWatchdog(irrigationOutputs valveIndex)
 {
-  // If no outputs are on, reset timer ready for next activation
-  if (!anyOutputPowered())
-  {
-    watchdogTimeStarted = millis(); // Ready for next valve activation
-    return false;
-  }
-
   // A duration of 0 means the watchdog is disabled - never shut off by timeout
   if (watchdogDurationMinutes == 0)
   {
     return false;
   }
 
-  // When outputs are on, check duration
-  if (millis() - watchdogTimeStarted >= watchdogDurationTimeSetMillis)
+  // Check this valve's own elapsed on-time against the configured duration.
+  if (millis() - watchdogTimeStarted[valveIndex] >= watchdogDurationTimeSetMillis)
   {
-    Serial.println("checkWatchdog: duration exceeded, shutting down all valves");
+    Serial.println("checkWatchdog: duration exceeded for valve " + String((int)valveIndex + 1) + ", shutting it down");
     return true;
   }
 
@@ -1112,7 +1044,7 @@ void checkState1()
   case s_Output1On:
     // State is currently: On
     // Check if we need to stop, by checking for watchdog duration timer.
-    if (checkWatchdog())
+    if (checkWatchdog(outputOne))
       stateMachine1 = s_Output1Stop;
     break;
 
@@ -1151,7 +1083,7 @@ void checkState2()
   case s_Output2On:
     // State is currently: On
     // Check if we need to stop, by checking for watchdog duration timer.
-    if (checkWatchdog())
+    if (checkWatchdog(outputTwo))
       stateMachine2 = s_Output2Stop;
     break;
 
@@ -1190,7 +1122,7 @@ void checkState3()
   case s_Output3On:
     // State is currently: On
     // Check if we need to stop, by checking for watchdog duration timer.
-    if (checkWatchdog())
+    if (checkWatchdog(outputThree))
       stateMachine3 = s_Output3Stop;
     break;
 
@@ -1229,7 +1161,7 @@ void checkState4()
   case s_Output4On:
     // State is currently: On
     // Check if we need to stop, by checking for watchdog duration timer.
-    if (checkWatchdog())
+    if (checkWatchdog(outputFour))
       stateMachine4 = s_Output4Stop;
     break;
 
@@ -1247,8 +1179,7 @@ void checkState4()
 
 /*
   Initialize the NTP client and perform an immediate time sync.
-  Also initialises lastRebootCheckDate to today so the device does not
-  reboot immediately if it happens to boot on a scheduled-reboot day.
+  Also records the boot day so the reboot interval is measured from startup.
 */
 void setupNTP()
 {
@@ -1262,12 +1193,15 @@ void setupNTP()
     // Record today so updateNTPTime() does not re-sync until tomorrow
     // getEpochTime() returns seconds since Unix epoch; divide by 86400 (seconds/day) to get epoch day
     lastNtpUpdateDate = timeClient.getEpochTime() / 86400UL;
-    // Pre-seed the reboot check to today so we do not reboot immediately
-    // if the current day happens to be a scheduled-reboot day.
+    // Record the boot day and pre-seed the reboot check to today so the reboot
+    // interval is counted from startup and we never reboot immediately.
+    bootEpochDay = lastNtpUpdateDate;
     lastRebootCheckDate = lastNtpUpdateDate;
   }
   else
   {
+    // bootEpochDay stays 0; checkRebootCondition() will record it lazily once
+    // NTP synchronises in the main loop.
     Serial.println("NTP initial sync failed; will retry in loop.");
   }
 }
@@ -1281,42 +1215,62 @@ void updateNTPTime()
   // Get current date as epoch day (days since 1970-01-01)
   unsigned long currentEpochDay = timeClient.getEpochTime() / 86400UL;
 
-  // Update NTP if we haven't updated today
+  // Update NTP if we haven't updated today. Only record the date when the
+  // update actually succeeds; otherwise lastNtpUpdateDate would be set to an
+  // unsynced (near-zero) day and NTP would never retry until the day rolled
+  // over, which cannot happen while the clock is unsynced.
   if (currentEpochDay != lastNtpUpdateDate)
   {
-    timeClient.update();
-    lastNtpUpdateDate = currentEpochDay;
-    Serial.print("NTP updated. Current time: ");
-    Serial.println(timeClient.getFormattedTime());
+    if (timeClient.update())
+    {
+      lastNtpUpdateDate = timeClient.getEpochTime() / 86400UL;
+      Serial.print("NTP updated. Current time: ");
+      Serial.println(timeClient.getFormattedTime());
+    }
   }
 }
 
 /*
-  Check if the system should reboot (every 7 days during night hours 2-4 AM).
-  Uses NTP date tracking to avoid millis() overflow issues.
+  Check if the system should reboot after a fixed number of days of uptime,
+  during the night maintenance window (2-4 AM). Uses NTP epoch-day tracking so
+  it is immune to millis() overflow, and measures days since boot rather than
+  calendar weeks so the interval since the last reboot is consistent.
 */
 void checkRebootCondition()
 {
-  // Get current date as epoch day (days since 1970-01-01)
-  unsigned long currentEpochDay = timeClient.getEpochTime() / 86400UL;
+  const unsigned long epoch = timeClient.getEpochTime();
 
-  // Check if we've crossed into a new reboot eligibility period (every 7 days)
-  // Only check once per day to avoid multiple reboot attempts
+  // Ignore an unsynced clock (epoch near zero) so we never reboot on bad time.
+  if (epoch < 1000000000UL)
+  {
+    return;
+  }
+
+  unsigned long currentEpochDay = epoch / 86400UL;
+
+  // Lazily record the boot day the first time we have a valid clock. This also
+  // covers the case where the initial NTP sync in setup failed.
+  if (bootEpochDay == 0)
+  {
+    bootEpochDay = currentEpochDay;
+    lastRebootCheckDate = currentEpochDay;
+    return;
+  }
+
+  // Only evaluate once per day to avoid repeated reboot attempts.
   if (currentEpochDay != lastRebootCheckDate)
   {
     lastRebootCheckDate = currentEpochDay;
 
-    // Check if we've reached 7-day interval (simplified: check if day is divisible by 7)
-    // For production, you might track actual boot date, but this provides periodic reboots
-    if ((currentEpochDay % 7) == 0)
+    // Reboot once the configured number of days of uptime has elapsed.
+    if ((currentEpochDay - bootEpochDay) >= rebootIntervalDays)
     {
-      timeClient.update(); // Ensure we have the latest time
       int currentHour = timeClient.getHours();
 
       // Check if the current time is within the reboot window (2-4 AM)
       if (currentHour >= rebootStartHour && currentHour < rebootEndHour)
       {
-        Serial.println("Scheduled reboot: 7-day maintenance window reached");
+        Serial.println("Scheduled reboot: maintenance window reached");
         rebootArduino(); // Call the reboot function
       }
     }
