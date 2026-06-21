@@ -155,6 +155,12 @@ const int DIGITAL_PIN_LED_POWER_STATUS = CONTROLLINO_D0;
 const int DIGITAL_PIN_LED_NETWORK_CONNECTED = CONTROLLINO_D1;
 const int DIGITAL_PIN_LED_MQTT_CONNECTED = CONTROLLINO_D2;
 const int DIGITAL_PIN_LED_MQTT_FLASH = CONTROLLINO_D3;
+// Additional diagnostic LEDs (each Controllino Maxi digital output has an
+// on-board indicator LED). These use spare outputs and never collide with the
+// valve outputs on D8-D11.
+const int DIGITAL_PIN_LED_HEARTBEAT = CONTROLLINO_D4;   // Blinks ~1 Hz while the main loop is running
+const int DIGITAL_PIN_LED_TIME_SYNCED = CONTROLLINO_D5; // On once a valid NTP time is available
+const int DIGITAL_PIN_LED_FAULT = CONTROLLINO_D6;       // On while disconnected from the MQTT broker
 
 // Relay output pins
 const int DIGITAL_PIN_OUTPUT_ONE = CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11;   // Define output one
@@ -1415,6 +1421,31 @@ void checkRebootCondition()
   }
 }
 
+// Update the diagnostic status LEDs. Non-blocking: safe to call every loop.
+//  - Heartbeat: toggles ~1 Hz so a stalled/hung controller is obvious at a glance.
+//  - Time-synced: lit once NTP has provided a valid (post-2001) epoch.
+//  - Fault: lit while the MQTT broker is unreachable (also covers Ethernet loss,
+//    since MQTT cannot connect without the network).
+void updateStatusLeds()
+{
+  static unsigned long lastHeartbeatToggle = 0;
+  static bool heartbeatState = false;
+  unsigned long now = millis();
+  if (now - lastHeartbeatToggle >= 500UL)
+  {
+    lastHeartbeatToggle = now;
+    heartbeatState = !heartbeatState;
+    digitalWrite(DIGITAL_PIN_LED_HEARTBEAT, heartbeatState ? HIGH : LOW);
+  }
+
+  // getEpochTime() returns stored time + elapsed millis; it does not trigger a
+  // network request, so it is cheap to poll here.
+  bool timeSynced = timeClient.getEpochTime() >= 1000000000UL;
+  digitalWrite(DIGITAL_PIN_LED_TIME_SYNCED, timeSynced ? HIGH : LOW);
+
+  digitalWrite(DIGITAL_PIN_LED_FAULT, mqttClient.connected() ? LOW : HIGH);
+}
+
 // Custom setup for this program.
 void customSetup()
 {
@@ -1448,6 +1479,9 @@ void customLoop()
 
   // Check reboot condition
   checkRebootCondition();
+
+  // Update the diagnostic status LEDs (heartbeat, time-synced, fault)
+  updateStatusLeds();
 }
 
 void setup()
@@ -1465,20 +1499,19 @@ void setup()
   pinMode(DIGITAL_PIN_LED_MQTT_CONNECTED, OUTPUT);
   pinMode(DIGITAL_PIN_LED_NETWORK_CONNECTED, OUTPUT);
   pinMode(DIGITAL_PIN_LED_MQTT_FLASH, OUTPUT);
-  pinMode(CONTROLLINO_D6, OUTPUT);
-  pinMode(CONTROLLINO_D7, OUTPUT);
-  pinMode(CONTROLLINO_D8, OUTPUT);
-  pinMode(CONTROLLINO_D9, OUTPUT);
-  pinMode(CONTROLLINO_D10, OUTPUT);
+  pinMode(DIGITAL_PIN_LED_HEARTBEAT, OUTPUT);
+  pinMode(DIGITAL_PIN_LED_TIME_SYNCED, OUTPUT);
+  pinMode(DIGITAL_PIN_LED_FAULT, OUTPUT);
 
   // Initialize pin start values
   digitalWrite(DIGITAL_PIN_LED_POWER_STATUS, HIGH);
   digitalWrite(DIGITAL_PIN_LED_MQTT_CONNECTED, LOW);
   digitalWrite(DIGITAL_PIN_LED_NETWORK_CONNECTED, LOW);
   digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, LOW);
-
-  // Set startup debug LED #1
-  digitalWrite(CONTROLLINO_D6, HIGH);
+  digitalWrite(DIGITAL_PIN_LED_HEARTBEAT, LOW);
+  digitalWrite(DIGITAL_PIN_LED_TIME_SYNCED, LOW);
+  // Fault LED on at boot; cleared by updateStatusLeds() once MQTT connects.
+  digitalWrite(DIGITAL_PIN_LED_FAULT, HIGH);
   delay(250);
   Serial.println("  Pins setup complete");
 
@@ -1486,10 +1519,6 @@ void setup()
   Serial.println("Setup ethernet..");
   setup_ethernet();
   Serial.println("  Ethernet setup complete");
-
-  // Set startup debug LED #2
-  digitalWrite(CONTROLLINO_D7, HIGH);
-  delay(250);
 
   // Setup for this project (output pins, NTP) before MQTT connects so
   // relays are in a known safe state when the first MQTT messages arrive.
@@ -1503,10 +1532,6 @@ void setup()
   mqttClient.setCallback(mqttcallback);
   checkMqttConnection();
   Serial.println("  Setup MQTT complete");
-
-  // Set startup debug LED #3
-  digitalWrite(CONTROLLINO_D8, HIGH);
-  delay(250);
 
   Serial.println("  Setup Complete");
   Serial.println("");
