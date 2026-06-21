@@ -6,7 +6,7 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/genestealer/Controllino-Irrigation)](https://github.com/genestealer/Controllino-Irrigation/releases)
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Ready-blue)](https://platformio.org/)
 
-Ethernet-based irrigation controller running on a **Controllino Maxi** (ATmega 2560 + W5100).  
+Ethernet-based irrigation controller running on a **Controllino Maxi** (ATmega 2560 + W5100).
 Controls up to **four water solenoid valves** via relay outputs with full
 [Home Assistant](https://www.home-assistant.io/) integration through MQTT auto-discovery.
 
@@ -129,7 +129,7 @@ Firmware artifacts are available for download from the [Actions](https://github.
 
 ## Scheduled maintenance reboot
 
-The firmware reboots once every 7 days during the 2–4 AM window (UTC).  
+The firmware reboots once every 7 days during the 2–4 AM window (UTC).
 NTP is synced on boot via `pool.ntp.org` (configurable in `Private.h`).
 
 ---
@@ -169,4 +169,3 @@ The `platformio.ini` follows PlatformIO best practices:
 ---
 
 *Based on the earlier ESP8266 variant: <https://github.com/genestealer/Irrigation-Controller>*
-
