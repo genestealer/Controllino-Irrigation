@@ -16,7 +16,6 @@ jobs:
         environment:
           - controllino_maxi
           - front_garden
-          - back_garden
     
     steps:
       - name: Checkout code
