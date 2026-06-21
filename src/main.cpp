@@ -89,8 +89,8 @@ unsigned long bootEpochTime = 0;
 // trackMillisRollover() on every loop() iteration.
 unsigned long millisRolloverCount = 0;
 unsigned long lastMillisSample = 0;
-const int rebootStartHour = 2;         // Start of reboot window (2:00 AM)
-const int rebootEndHour = 4;           // End of reboot window (4:00 AM)
+const int rebootStartHour = 2;              // Start of reboot window (2:00 AM)
+const int rebootEndHour = 4;                // End of reboot window (4:00 AM)
 const unsigned long rebootIntervalDays = 7; // Reboot after this many days of uptime
 // ULONG_MAX forces an NTP update on the very first call to updateNTPTime()
 unsigned long lastNtpUpdateDate = ULONG_MAX;
@@ -786,7 +786,6 @@ void publishHADiscovery()
       Serial.println("  Published discovery for Last Boot sensor");
   }
 }
-
 
 // Subscribe to MQTT topics
 void mqttSubscribe()

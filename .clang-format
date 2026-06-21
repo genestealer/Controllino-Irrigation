@@ -1,0 +1,13 @@
+# clang-format configuration tuned to the existing code style.
+# Allman braces, 2-space indent, no column-limit reflowing.
+BasedOnStyle: LLVM
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+BreakBeforeBraces: Allman
+ColumnLimit: 0
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+SortIncludes: false
+PointerAlignment: Right
