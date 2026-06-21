@@ -84,6 +84,11 @@ unsigned long bootEpochDay = 0;        // Epoch day the device booted / last reb
 // synced at least once; used to report the "Last Boot" diagnostic timestamp to
 // Home Assistant only after we have a valid time.
 unsigned long bootEpochTime = 0;
+// Tracks millis() rollovers (every ~49.7 days) so true uptime can be computed
+// even if the first NTP sync is delayed past one or more rollovers. Updated by
+// trackMillisRollover() on every loop() iteration.
+unsigned long millisRolloverCount = 0;
+unsigned long lastMillisSample = 0;
 const int rebootStartHour = 2;         // Start of reboot window (2:00 AM)
 const int rebootEndHour = 4;           // End of reboot window (4:00 AM)
 const unsigned long rebootIntervalDays = 7; // Reboot after this many days of uptime
@@ -339,8 +344,10 @@ void epochToIso8601(unsigned long epoch, char *out, size_t outLen)
 }
 
 // Record the boot moment (in Unix epoch seconds) the first time a valid NTP
-// time is available. Subtracting millis() back-calculates the boot instant, so
-// it is correct regardless of when this is first called after startup.
+// time is available. The boot instant is back-calculated by subtracting the
+// true uptime from the current epoch. Uptime accounts for millis() rollovers
+// (every ~49.7 days) so the result stays correct even when the first NTP sync
+// is delayed past one or more rollovers.
 void captureBootEpochTime()
 {
   if (bootEpochTime != 0)
@@ -350,8 +357,24 @@ void captureBootEpochTime()
   unsigned long epoch = timeClient.getEpochTime();
   if (epoch >= 1000000000UL) // Sanity check: clock has synced (after 2001).
   {
-    bootEpochTime = epoch - (millis() / 1000UL);
+    // Each rollover spans 2^32 ms; 2^32 / 1000 = 4294967.296 s. The dropped
+    // 0.296 s/rollover is negligible for a "Last Boot" diagnostic.
+    unsigned long uptimeSeconds = millisRolloverCount * 4294967UL + (millis() / 1000UL);
+    bootEpochTime = epoch - uptimeSeconds;
   }
+}
+
+// Detect millis() rollovers by watching for the counter wrapping back to a
+// smaller value. Must be called frequently (every loop) so no rollover is
+// missed; loop() runs far faster than the ~49.7-day rollover period.
+void trackMillisRollover()
+{
+  unsigned long now = millis();
+  if (now < lastMillisSample)
+  {
+    millisRolloverCount++;
+  }
+  lastMillisSample = now;
 }
 
 // Publish this nodes state via MQTT
@@ -743,7 +766,10 @@ void publishHADiscovery()
     snprintf(uniqueId, sizeof(uniqueId), "%s_last_boot", nodeId);
     cfg["unique_id"] = uniqueId;
     cfg["stat_t"] = publishNodeHealthJsonTopic;
-    cfg["val_tpl"] = "{{ value_json.LastBoot }}";
+    // Render "None" until LastBoot is present (before the first NTP sync) so
+    // Home Assistant keeps the timestamp entity in an unknown state instead of
+    // logging invalid-datetime parse errors for an empty value.
+    cfg["val_tpl"] = "{{ value_json.LastBoot if value_json.LastBoot is defined else 'None' }}";
     cfg["dev_cla"] = "timestamp";
     cfg["icon"] = "mdi:clock-start";
     cfg["entity_category"] = "diagnostic";
@@ -1491,6 +1517,10 @@ void setup()
 // Main working loop
 void loop()
 {
+  // Keep the millis() rollover counter current so boot-time back-calculation
+  // stays accurate across the ~49.7-day rollover boundary.
+  trackMillisRollover();
+
   // Check ethernet connection periodically for DHCP maintenance
   static unsigned long lastEthernetCheck = 0;
   if (millis() - lastEthernetCheck >= 60000)
