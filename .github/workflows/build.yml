@@ -15,7 +15,6 @@ jobs:
       matrix:
         environment:
           - controllino_maxi
-          - front_garden
 
     steps:
       - name: Checkout code
