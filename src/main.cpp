@@ -3,10 +3,15 @@
   Author: Richard Huish (2017-2024)
 
   **Description:**
-  Dual irrigation system with local control via Home Assistant GUI and MQTT integration.
-  - MQTT 'on' payload commands one output on.
-  - MQTT 'off' payload commands one output off.
-  - Ethernet connectivity via W5100.
+  Ethernet irrigation controller for up to four water solenoid valves, with
+  local control via Home Assistant and MQTT auto-discovery.
+  - MQTT 'OPEN' payload opens a valve (relay on).
+  - MQTT 'CLOSE' payload closes a valve (relay off).
+  - Per-valve watchdog timer (0-120 min) auto-closes valves left running, e.g.
+    after a network/broker outage; 0 disables the timeout.
+  - Home Assistant entities are auto-discovered (no manual HA configuration).
+  - NTP time-sync with a scheduled 7-day maintenance reboot (2-4 AM window).
+  - Ethernet connectivity via W5100 with DHCP and non-blocking MQTT reconnect.
   - Based on previous ESP8266-based projects: https://github.com/genestealer/Irrigation-Controller
 
   **Project Repository:**
@@ -27,11 +32,11 @@
   - Protection: Vishay 1N4001 Flyback Diodes (50V 1A)
 
   **Connections:**
-  - Outputs:
-    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10: 1st Water Valve (2A output)
-    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11: 2nd Water Valve (2A output)
-    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_09: 3rd Water Valve (2A output)
-    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08: 4th Water Valve (2A output)
+  - Outputs (relay screw terminals, 2 Amp each):
+    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11: Valve 1
+    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10: Valve 2
+    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_09: Valve 3
+    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08: Valve 4
       *Note: Relays can switch higher voltages or provide galvanic isolation.
   - Indicators:
     - On-board LEDs for MQTT, Ethernet, and system status.
@@ -63,6 +68,18 @@
 #include <avr/wdt.h>      // Watchdog timer library
 #include <NTPClient.h>
 #include <EthernetUdp.h> // Use EthernetUdp for NTP communication
+
+// Legacy MQTT support (pre auto-discovery).
+// When enabled, the device also publishes the old combined status JSON
+// (Valve1-4 + WatchdogMinutes) to secret_publishNodeStatusJsonTopic, used by
+// manually-configured Home Assistant template sensors. Home Assistant MQTT
+// auto-discovery does not need this; per-valve state topics and the watchdog
+// number entity already provide the same data. Define
+// ENABLE_LEGACY_MQTT_STATUS_JSON to 1 in Private.h to re-enable it.
+// Defaults to disabled (0) when not defined.
+#ifndef ENABLE_LEGACY_MQTT_STATUS_JSON
+#define ENABLE_LEGACY_MQTT_STATUS_JSON 0
+#endif
 
 // Ethernet parameters
 byte mac[] = secret_byte;
@@ -134,8 +151,10 @@ const char *valveName4 = secret_valveName4;
 const char *watchdogCommandTopic = "Home/Irrigation/Watchdog/Command"; // Command topic for watchdog duration (in minutes)
 const char *watchdogStateTopic = "Home/Irrigation/Watchdog/State";     // State topic for watchdog duration (in minutes)
 // MQTT Publish
-const char *publishLastWillTopic = secret_publishLastWillTopic;             // MQTT last will
-const char *publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic; // State of the node
+const char *publishLastWillTopic = secret_publishLastWillTopic; // MQTT last will
+#if ENABLE_LEGACY_MQTT_STATUS_JSON
+const char *publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic; // State of the node (legacy combined JSON)
+#endif
 const char *publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic; // Health of the node
 // MQTT publish frequency
 unsigned long previousMillis = 0;
@@ -383,7 +402,7 @@ void trackMillisRollover()
   lastMillisSample = now;
 }
 
-// Publish this nodes state via MQTT
+// Publish this node's state via MQTT
 void publishNodeHealth()
 {
   Serial.println("Inside publishNodeHealth() function");
@@ -848,7 +867,7 @@ boolean mqttReconnect()
   without blocking the main loop.
   Called from main loop.
   If MQTT connection fails after x attempts it tries to reconnect ethernet
-  If ethernet connections fails after x attempts it reboots the esp
+  If ethernet connection fails after x attempts it reboots the Controllino
 */
 void checkMqttConnection()
 {
@@ -917,7 +936,7 @@ void mqttPublishStatusData(bool ignorePublishInterval)
     Serial.println("");
     Serial.println("##############################################");
     Serial.println("Inside mqttPublishStatusData() function");
-    digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, HIGH); // Light LED whilst in this fuction
+    digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, HIGH); // Light LED whilst in this function
 
     // Check connection to MQTT server
     if (mqttClient.connected())
@@ -926,7 +945,10 @@ void mqttPublishStatusData(bool ignorePublishInterval)
       // Publish node state data
       publishNodeHealth();
 
-      // Prepare and send the data in JSON to MQTT
+#if ENABLE_LEGACY_MQTT_STATUS_JSON
+      // Legacy: publish the combined status JSON (Valve1-4 + WatchdogMinutes)
+      // for manually-configured Home Assistant setups. Redundant when using
+      // MQTT auto-discovery (per-valve state topics + watchdog number entity).
       // Use a static JSON document with bounded capacity (saves SRAM and avoids dynamic allocation)
       StaticJsonDocument<json_buffer_size> doc;
       // Publish valve states as "open" or "closed" to match HA valve entity standards
@@ -944,6 +966,7 @@ void mqttPublishStatusData(bool ignorePublishInterval)
         Serial.println("  Failed to publish JSON sensor data to [" + String(publishNodeStatusJsonTopic) + "]");
       else
         Serial.println("  JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
+#endif
       Serial.println("  Complete mqttPublishStatusData() function");
     }
     // Always turn the flash LED off, even when we skipped publishing because
@@ -1194,7 +1217,7 @@ void checkState1()
     // Command the output off.
     controlOutputOne(false);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Set state mahcine to idle on the next loop
+    // Set state machine to idle on the next loop
     stateMachine1 = s_idle1;
     break;
   }
@@ -1233,7 +1256,7 @@ void checkState2()
     // Command the output off.
     controlOutputTwo(false);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Set state mahcine to idle on the next loop
+    // Set state machine to idle on the next loop
     stateMachine2 = s_idle2;
     break;
   }
@@ -1272,7 +1295,7 @@ void checkState3()
     // Command the output off.
     controlOutputThree(false);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Set state mahcine to idle on the next loop
+    // Set state machine to idle on the next loop
     stateMachine3 = s_idle3;
     break;
   }
@@ -1311,7 +1334,7 @@ void checkState4()
     // Command the output off.
     controlOutputFour(false);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Set state mahcine to idle on the next loop
+    // Set state machine to idle on the next loop
     stateMachine4 = s_idle4;
     break;
   }
