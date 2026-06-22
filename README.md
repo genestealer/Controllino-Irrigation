@@ -70,6 +70,16 @@ Edit `include/Private.h` and fill in:
 
 > `Private.h` is listed in `.gitignore` and will never be committed.
 
+#### Optional: legacy combined status JSON
+
+Home Assistant integration uses MQTT auto-discovery, so no manual configuration is needed. For older, manually-configured Home Assistant setups, the firmware can still publish the legacy combined status JSON (`Valve1`-`Valve4` + `WatchdogMinutes`) to `secret_publishNodeStatusJsonTopic`. It is **disabled by default**. To re-enable it, set the following in `Private.h`:
+
+```c
+#define ENABLE_LEGACY_MQTT_STATUS_JSON 1
+```
+
+When the flag is undefined or `0`, the legacy payload is not published.
+
 ### 3 – Select your target controller
 
 Two configurations are supported. Set `IRRIGATION_CONTROLLER` in `platformio.ini` (or use the named environments below):
@@ -112,6 +122,8 @@ Valve command payloads follow the [Home Assistant valve](https://www.home-assist
 | Valve closed state | `closed` |
 
 The watchdog duration (in minutes, range **0–120**) is also exposed as a Home Assistant `number` entity on topic `Home/Irrigation/Watchdog/Command`. Set to `0` to disable the watchdog timeout.
+
+> **Legacy combined status JSON:** the old `StatusJSON` payload (`Valve1`-`Valve4` + `WatchdogMinutes`) on `secret_publishNodeStatusJsonTopic` is no longer published by default, as auto-discovery provides per-valve state topics and a watchdog number entity. Re-enable it with `#define ENABLE_LEGACY_MQTT_STATUS_JSON 1` in `Private.h` if a manual Home Assistant configuration depends on it.
 
 ---
 

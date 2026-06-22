@@ -64,6 +64,18 @@
 #include <NTPClient.h>
 #include <EthernetUdp.h> // Use EthernetUdp for NTP communication
 
+// Legacy MQTT support (pre auto-discovery).
+// When enabled, the device also publishes the old combined status JSON
+// (Valve1-4 + WatchdogMinutes) to secret_publishNodeStatusJsonTopic, used by
+// manually-configured Home Assistant template sensors. Home Assistant MQTT
+// auto-discovery does not need this; per-valve state topics and the watchdog
+// number entity already provide the same data. Define
+// ENABLE_LEGACY_MQTT_STATUS_JSON to 1 in Private.h to re-enable it.
+// Defaults to disabled (0) when not defined.
+#ifndef ENABLE_LEGACY_MQTT_STATUS_JSON
+#define ENABLE_LEGACY_MQTT_STATUS_JSON 0
+#endif
+
 // Ethernet parameters
 byte mac[] = secret_byte;
 int noEthernetConnectionCountRebootCount = 0;
@@ -134,8 +146,10 @@ const char *valveName4 = secret_valveName4;
 const char *watchdogCommandTopic = "Home/Irrigation/Watchdog/Command"; // Command topic for watchdog duration (in minutes)
 const char *watchdogStateTopic = "Home/Irrigation/Watchdog/State";     // State topic for watchdog duration (in minutes)
 // MQTT Publish
-const char *publishLastWillTopic = secret_publishLastWillTopic;             // MQTT last will
-const char *publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic; // State of the node
+const char *publishLastWillTopic = secret_publishLastWillTopic; // MQTT last will
+#if ENABLE_LEGACY_MQTT_STATUS_JSON
+const char *publishNodeStatusJsonTopic = secret_publishNodeStatusJsonTopic; // State of the node (legacy combined JSON)
+#endif
 const char *publishNodeHealthJsonTopic = secret_publishNodeHealthJsonTopic; // Health of the node
 // MQTT publish frequency
 unsigned long previousMillis = 0;
@@ -926,7 +940,10 @@ void mqttPublishStatusData(bool ignorePublishInterval)
       // Publish node state data
       publishNodeHealth();
 
-      // Prepare and send the data in JSON to MQTT
+#if ENABLE_LEGACY_MQTT_STATUS_JSON
+      // Legacy: publish the combined status JSON (Valve1-4 + WatchdogMinutes)
+      // for manually-configured Home Assistant setups. Redundant when using
+      // MQTT auto-discovery (per-valve state topics + watchdog number entity).
       // Use a static JSON document with bounded capacity (saves SRAM and avoids dynamic allocation)
       StaticJsonDocument<json_buffer_size> doc;
       // Publish valve states as "open" or "closed" to match HA valve entity standards
@@ -944,6 +961,7 @@ void mqttPublishStatusData(bool ignorePublishInterval)
         Serial.println("  Failed to publish JSON sensor data to [" + String(publishNodeStatusJsonTopic) + "]");
       else
         Serial.println("  JSON Sensor data published to [" + String(publishNodeStatusJsonTopic) + "] ");
+#endif
       Serial.println("  Complete mqttPublishStatusData() function");
     }
     // Always turn the flash LED off, even when we skipped publishing because

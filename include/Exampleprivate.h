@@ -14,6 +14,12 @@
 #define secret_mqtt_server "192.168.0.2" // <-- your MQTT broker IP/host
 #define ntp_server "pool.ntp.org"        // NTP server for time synchronization
 
+// Legacy MQTT (optional): set to 1 to also publish the old combined status
+// JSON (Valve1-4 + WatchdogMinutes) to secret_publishNodeStatusJsonTopic for
+// manually-configured Home Assistant setups. Not needed with MQTT
+// auto-discovery. Defaults to disabled (0) when left undefined.
+// #define ENABLE_LEGACY_MQTT_STATUS_JSON 1
+
 #if (IRRIGATION_CONTROLLER != 1) && (IRRIGATION_CONTROLLER != 2)
 #error "IRRIGATION_CONTROLLER must be 1 (Front) or 2 (Back)"
 #endif
