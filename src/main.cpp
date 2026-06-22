@@ -3,10 +3,15 @@
   Author: Richard Huish (2017-2024)
 
   **Description:**
-  Dual irrigation system with local control via Home Assistant GUI and MQTT integration.
-  - MQTT 'on' payload commands one output on.
-  - MQTT 'off' payload commands one output off.
-  - Ethernet connectivity via W5100.
+  Ethernet irrigation controller for up to four water solenoid valves, with
+  local control via Home Assistant and MQTT auto-discovery.
+  - MQTT 'OPEN' payload opens a valve (relay on).
+  - MQTT 'CLOSE' payload closes a valve (relay off).
+  - Per-valve watchdog timer (0-120 min) auto-closes valves left running, e.g.
+    after a network/broker outage; 0 disables the timeout.
+  - Home Assistant entities are auto-discovered (no manual HA configuration).
+  - NTP time-sync with a scheduled 7-day maintenance reboot (2-4 AM window).
+  - Ethernet connectivity via W5100 with DHCP and non-blocking MQTT reconnect.
   - Based on previous ESP8266-based projects: https://github.com/genestealer/Irrigation-Controller
 
   **Project Repository:**
@@ -27,11 +32,11 @@
   - Protection: Vishay 1N4001 Flyback Diodes (50V 1A)
 
   **Connections:**
-  - Outputs:
-    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10: 1st Water Valve (2A output)
-    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11: 2nd Water Valve (2A output)
-    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_09: 3rd Water Valve (2A output)
-    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08: 4th Water Valve (2A output)
+  - Outputs (relay screw terminals, 2 Amp each):
+    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_11: Valve 1
+    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_10: Valve 2
+    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_09: Valve 3
+    - CONTROLLINO_SCREW_TERMINAL_DIGITAL_OUT_08: Valve 4
       *Note: Relays can switch higher voltages or provide galvanic isolation.
   - Indicators:
     - On-board LEDs for MQTT, Ethernet, and system status.
@@ -397,7 +402,7 @@ void trackMillisRollover()
   lastMillisSample = now;
 }
 
-// Publish this nodes state via MQTT
+// Publish this node's state via MQTT
 void publishNodeHealth()
 {
   Serial.println("Inside publishNodeHealth() function");
@@ -862,7 +867,7 @@ boolean mqttReconnect()
   without blocking the main loop.
   Called from main loop.
   If MQTT connection fails after x attempts it tries to reconnect ethernet
-  If ethernet connections fails after x attempts it reboots the esp
+  If ethernet connection fails after x attempts it reboots the Controllino
 */
 void checkMqttConnection()
 {
@@ -931,7 +936,7 @@ void mqttPublishStatusData(bool ignorePublishInterval)
     Serial.println("");
     Serial.println("##############################################");
     Serial.println("Inside mqttPublishStatusData() function");
-    digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, HIGH); // Light LED whilst in this fuction
+    digitalWrite(DIGITAL_PIN_LED_MQTT_FLASH, HIGH); // Light LED whilst in this function
 
     // Check connection to MQTT server
     if (mqttClient.connected())
@@ -1212,7 +1217,7 @@ void checkState1()
     // Command the output off.
     controlOutputOne(false);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Set state mahcine to idle on the next loop
+    // Set state machine to idle on the next loop
     stateMachine1 = s_idle1;
     break;
   }
@@ -1251,7 +1256,7 @@ void checkState2()
     // Command the output off.
     controlOutputTwo(false);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Set state mahcine to idle on the next loop
+    // Set state machine to idle on the next loop
     stateMachine2 = s_idle2;
     break;
   }
@@ -1290,7 +1295,7 @@ void checkState3()
     // Command the output off.
     controlOutputThree(false);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Set state mahcine to idle on the next loop
+    // Set state machine to idle on the next loop
     stateMachine3 = s_idle3;
     break;
   }
@@ -1329,7 +1334,7 @@ void checkState4()
     // Command the output off.
     controlOutputFour(false);
     mqttPublishStatusData(true); // Immediate publish cycle
-    // Set state mahcine to idle on the next loop
+    // Set state machine to idle on the next loop
     stateMachine4 = s_idle4;
     break;
   }
